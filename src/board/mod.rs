@@ -1,11 +1,12 @@
 use bitboard::Bitboard;
-
-use crate::board::defs::{NUM_PIECES, NUM_SIDES};
+use piece::{Color, Piece, PieceType};
+use square::Square;
 
 mod bitboard;
-mod defs;
+mod piece;
 mod square;
 
 pub struct Board {
-    pub bitboards: [[Bitboard; NUM_PIECES]; NUM_SIDES],
+    pub bitboards: [[Bitboard; PieceType::COUNT]; Color::SIDES],
+    pub mailbox: [Piece; Square::TOTAL as usize],
 }

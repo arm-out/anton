@@ -13,6 +13,8 @@ pub enum Square {
 }
 
 impl Square {
+    pub const TOTAL: u8 = 64;
+
     pub fn new(square: u8) -> Self {
         unsafe { std::mem::transmute(square) }
     }
