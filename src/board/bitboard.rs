@@ -34,3 +34,86 @@ impl std::fmt::Display for Bitboard {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_bitboard_construction() {
+        let bb = Bitboard(0);
+        assert_eq!(bb.0, 0x0000000000000000);
+    }
+
+    #[test]
+    fn test_bitboard_contains() {
+        let mut bb = Bitboard(1);
+        assert!(bb.contains(Square::A1));
+        assert!(!bb.contains(Square::H8));
+        bb.set(Square::H8);
+        assert!(bb.contains(Square::H8));
+        bb.set(Square::D4);
+        assert!(bb.contains(Square::D4));
+        bb.set(Square::H2);
+        assert!(bb.contains(Square::H2));
+    }
+
+    #[test]
+    fn test_bitboard_set() {
+        let mut bb = Bitboard(0);
+        bb.set(Square::A1);
+        assert!(bb.contains(Square::A1));
+        bb.set(Square::H8);
+        assert!(bb.contains(Square::H8));
+        bb.set(Square::D4);
+        assert!(bb.contains(Square::D4));
+        bb.set(Square::H2);
+        assert!(bb.contains(Square::H2));
+    }
+
+    #[test]
+    fn test_bitboard_clear() {
+        let mut bb = Bitboard(0xFFFFFFFFFFFFFFFF);
+        bb.clear(Square::A1);
+        assert!(!bb.contains(Square::A1));
+        bb.clear(Square::H8);
+        assert!(!bb.contains(Square::H8));
+        bb.clear(Square::D4);
+        assert!(!bb.contains(Square::D4));
+        bb.clear(Square::H2);
+        assert!(!bb.contains(Square::H2));
+    }
+
+    #[test]
+    fn test_bitboard_display() {
+        let bb = Bitboard(0xFFFFFFFFFFFFFFFF);
+        assert_eq!(
+            format!("{bb}"),
+            "XXXXXXXX\n\
+             XXXXXXXX\n\
+             XXXXXXXX\n\
+             XXXXXXXX\n\
+             XXXXXXXX\n\
+             XXXXXXXX\n\
+             XXXXXXXX\n\
+             XXXXXXXX\n"
+        );
+        let mut bb = Bitboard(0);
+        bb.set(Square::A1);
+        bb.set(Square::H8);
+        bb.set(Square::D4);
+        bb.set(Square::H2);
+        assert_eq!(
+            format!("{bb}"),
+            ".......X\n\
+             ........\n\
+             ........\n\
+             ........\n\
+             ...X....\n\
+             ........\n\
+             .......X\n\
+             X.......\n"
+        );
+    }
+}

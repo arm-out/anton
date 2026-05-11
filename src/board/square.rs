@@ -1,6 +1,6 @@
 #[rustfmt::skip]
 #[repr(u8)]
-// A1 = 0, H8 = 63
+// Little Endian Rank-File Mapping (LERF) https://www.chessprogramming.org/Square_Mapping_Considerations#Little-Endian_Rank-File_Mapping
 pub enum Square {
     A1, B1, C1, D1, E1, F1, G1, H1,
     A2, B2, C2, D2, E2, F2, G2, H2,
@@ -19,5 +19,34 @@ impl Square {
 
     pub fn from_rank_and_file(rank: u8, file: u8) -> Self {
         Self::new(rank << 3 | file)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_rank_and_file() {
+        let square = Square::from_rank_and_file(0, 0);
+        assert_eq!(square as u8, Square::A1 as u8);
+        let square = Square::from_rank_and_file(7, 7);
+        assert_eq!(square as u8, Square::H8 as u8);
+        let square = Square::from_rank_and_file(3, 4);
+        assert_eq!(square as u8, Square::E4 as u8);
+        let square = Square::from_rank_and_file(2, 6);
+        assert_eq!(square as u8, Square::G3 as u8);
+    }
+
+    #[test]
+    fn test_new() {
+        let square = Square::new(Square::A1 as u8);
+        assert_eq!(square as u8, 0 as u8);
+        let square = Square::new(Square::H8 as u8);
+        assert_eq!(square as u8, 63 as u8);
+        let square = Square::new(Square::D3 as u8);
+        assert_eq!(square as u8, 19 as u8);
+        let square = Square::new(Square::F6 as u8);
+        assert_eq!(square as u8, 45 as u8);
     }
 }
