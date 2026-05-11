@@ -1,3 +1,5 @@
+use std::ops::{Index, IndexMut};
+
 #[repr(u8)]
 #[derive(Default)]
 pub enum Piece {
@@ -17,6 +19,20 @@ pub enum Piece {
     None,
 }
 
+impl<T> Index<Piece> for [T] {
+    type Output = T;
+
+    fn index(&self, piece: Piece) -> &Self::Output {
+        &self[piece as usize]
+    }
+}
+
+impl<T> IndexMut<Piece> for [T] {
+    fn index_mut(&mut self, piece: Piece) -> &mut Self::Output {
+        &mut self[piece as usize]
+    }
+}
+
 #[repr(u8)]
 #[derive(Default)]
 pub enum PieceType {
@@ -30,10 +46,38 @@ pub enum PieceType {
     None,
 }
 
+impl<T> Index<PieceType> for [T] {
+    type Output = T;
+
+    fn index(&self, piece_type: PieceType) -> &Self::Output {
+        &self[piece_type as usize]
+    }
+}
+
+impl<T> IndexMut<PieceType> for [T] {
+    fn index_mut(&mut self, piece_type: PieceType) -> &mut Self::Output {
+        &mut self[piece_type as usize]
+    }
+}
+
 #[repr(u8)]
 pub enum Color {
     White,
     Black,
+}
+
+impl<T> Index<Color> for [T] {
+    type Output = T;
+
+    fn index(&self, color: Color) -> &Self::Output {
+        &self[color as usize]
+    }
+}
+
+impl<T> IndexMut<Color> for [T] {
+    fn index_mut(&mut self, color: Color) -> &mut Self::Output {
+        &mut self[color as usize]
+    }
 }
 
 impl Piece {
