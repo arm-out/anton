@@ -45,5 +45,5 @@ impl PieceType {
 }
 
 impl Color {
-    pub const SIDES: usize = 2;
+    pub const COUNT: usize = 2;
 }
