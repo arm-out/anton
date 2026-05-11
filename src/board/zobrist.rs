@@ -1,5 +1,6 @@
 use crate::board::{
-    piece::{self, Color, Piece, PieceType},
+    Board,
+    piece::{Color, PieceType},
     square::Square,
 };
 
@@ -45,6 +46,10 @@ impl Zobrist {
         zobrist.side_to_move = random.random::<u64>();
 
         zobrist
+    }
+
+    pub fn init(board: &Board) -> u64 {
+        todo!()
     }
 }
 

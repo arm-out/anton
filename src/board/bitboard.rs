@@ -1,6 +1,6 @@
-use super::square::Square;
+use crate::board::square::Square;
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(transparent)] // Guarantees that the layout of the struct is the same as the underlying type
 pub struct Bitboard(pub u64);
 

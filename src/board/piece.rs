@@ -1,7 +1,7 @@
 use std::ops::{Index, IndexMut};
 
 #[repr(u8)]
-#[derive(Default)]
+#[derive(Default, Copy, Clone, Debug)]
 pub enum Piece {
     WhitePawn,
     BlackPawn,
@@ -17,6 +17,17 @@ pub enum Piece {
     BlackKing,
     #[default]
     None,
+}
+
+impl Piece {
+    // Transmute memory trick from https://github.com/codedeliveryservice/Reckless
+    pub fn color(self) -> Color {
+        unsafe { std::mem::transmute((self as u8) & 1) }
+    }
+
+    pub fn piece_type(self) -> PieceType {
+        unsafe { std::mem::transmute((self as u8) >> 1) }
+    }
 }
 
 impl<T> Index<Piece> for [T] {
@@ -60,6 +71,7 @@ impl<T> IndexMut<PieceType> for [T] {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
 pub enum Color {
     White,
