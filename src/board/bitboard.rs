@@ -11,10 +11,12 @@ impl Bitboard {
         self.0 & (1 << square as u64) != 0
     }
 
+    #[inline]
     pub fn set(&mut self, square: Square) {
         self.0 |= 1 << square as u64;
     }
 
+    #[inline]
     pub fn clear(&mut self, square: Square) {
         self.0 &= !(1 << square as u64);
     }

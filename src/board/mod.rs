@@ -12,7 +12,7 @@ mod state;
 mod zobrist;
 
 pub struct Board {
-    pub bitboards: [[Bitboard; PieceType::COUNT]; Color::COUNT],
+    pub bitboards: [Bitboard; Piece::COUNT],
     pub occupancy: [Bitboard; Color::COUNT],
     pub mailbox: [Piece; Square::COUNT],
     pub state: GameState,
@@ -24,7 +24,7 @@ impl Board {
     pub fn new() -> Self {
         const EMPTY: Bitboard = Bitboard(0);
         Self {
-            bitboards: [[EMPTY; PieceType::COUNT]; Color::COUNT],
+            bitboards: [EMPTY; Piece::COUNT],
             occupancy: [EMPTY; Color::COUNT],
             mailbox: [Piece::None; Square::COUNT],
             state: GameState {
@@ -47,27 +47,61 @@ impl Board {
         Ok(board)
     }
 
-    pub fn set_piece(&mut self, square: Square, piece: Piece) {
-        let color = piece.color();
-        let piece_type = piece.piece_type();
-        self.bitboards[color][piece_type].set(square);
-        self.occupancy[color].set(square);
+    // --------------------- MOVEMENT FUNCTIONS ---------------------
+
+    pub fn move_piece(&mut self, from: Square, to: Square, piece: Piece) {
+        self.remove_piece(from, piece);
+        self.add_piece(to, piece);
+    }
+
+    // Add a piece to the board at the given square
+    pub fn add_piece(&mut self, square: Square, piece: Piece) {
+        self.bitboards[piece].set(square);
+        self.occupancy[piece.color()].set(square);
         self.mailbox[square] = piece;
     }
 
+    // Remove a piece from the board at the given square
+    pub fn remove_piece(&mut self, square: Square, piece: Piece) {
+        self.bitboards[piece].clear(square);
+        self.occupancy[piece.color()].clear(square);
+        self.mailbox[square] = Piece::None;
+    }
+
+    pub fn set_ep_square(&mut self, square: Square) {
+        self.state.zobrist_key ^= self.zobrist.en_passant[self.state.en_passant]; // Remove old EP square from hash
+        self.state.en_passant = square;
+        self.state.zobrist_key ^= self.zobrist.en_passant[square]; // Add new EP square to hash
+    }
+
+    pub fn clear_ep_square(&mut self) {
+        self.state.zobrist_key ^= self.zobrist.en_passant[self.state.en_passant]; // Remove old EP square from hash
+        self.state.en_passant = Square::None;
+    }
+
+    pub fn toggle_side(&mut self) {
+        self.state.zobrist_key ^= self.zobrist.side_to_move[self.state.active_side]; // Remove old side from hash
+        self.state.active_side = !self.state.active_side;
+        self.state.zobrist_key ^= self.zobrist.side_to_move[self.state.active_side]; // Add new side to hash
+    }
+
+    pub fn update_castling_rights(&mut self, new_rights: u8) {
+        self.state.zobrist_key ^= self.zobrist.castling[self.state.castling_rights as usize]; // Remove old castling rights from hash
+        self.state.castling_rights = new_rights;
+        self.state.zobrist_key ^= self.zobrist.castling[new_rights as usize]; // Add new castling rights to hash
+    }
+
+    // --------------------- HASH FUNCTIONS ---------------------
+
     fn update_hash(&mut self, square: Square, piece: Piece) {
-        let color = piece.color();
-        let piece_type = piece.piece_type();
-        self.state.zobrist_key ^= self.zobrist.pieces[color][piece_type][square];
+        self.state.zobrist_key ^= self.zobrist.pieces[piece][square];
     }
 
     fn init_hash(&mut self) {
         self.state.zobrist_key = 0;
-        for piece_type in 0..PieceType::COUNT {
-            for color in 0..Color::COUNT {
-                for square in self.bitboards[color][piece_type] {
-                    self.state.zobrist_key ^= self.zobrist.pieces[color][piece_type][square];
-                }
+        for piece in 0..Piece::COUNT {
+            for square in self.bitboards[piece] {
+                self.state.zobrist_key ^= self.zobrist.pieces[piece][square];
             }
         }
 

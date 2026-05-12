@@ -6,14 +6,9 @@ fn main() {
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     let board = Board::from_fen(fen).unwrap();
 
-    for color in 0..2 {
-        for piece_type in 0..6 {
-            println!(
-                "Bitboard for color {} and piece type {}:",
-                color, piece_type
-            );
-            println!("{}", board.bitboards[color][piece_type]);
-        }
+    for piece in 0..12 {
+        println!("Bitboard for piece {}:", piece);
+        println!("{}", board.bitboards[piece]);
     }
 
     for color in 0..2 {
