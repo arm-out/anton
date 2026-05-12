@@ -1,3 +1,5 @@
+use std::path::Iter;
+
 use crate::board::square::Square;
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
@@ -15,6 +17,19 @@ impl Bitboard {
 
     pub fn clear(&mut self, square: Square) {
         self.0 &= !(1 << square as u64);
+    }
+}
+
+impl Iterator for Bitboard {
+    type Item = Square;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.0 == 0 {
+            return None;
+        }
+        let square_idx = self.0.trailing_zeros() as u8; // Get index of least significant bit
+        self.0 &= self.0 - 1;
+        Some(unsafe { std::mem::transmute(square_idx) }) // Convert index to Square
     }
 }
 
@@ -115,5 +130,13 @@ mod tests {
              .......X\n\
              X.......\n"
         );
+    }
+
+    #[test]
+    fn test_bitboard_iterator() {
+        let bb = Bitboard(0x8100_0000_0000_0000);
+        for (square, assert_square) in bb.into_iter().zip([Square::A8, Square::H8].iter()) {
+            assert_eq!(square, *assert_square);
+        }
     }
 }

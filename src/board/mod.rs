@@ -42,7 +42,7 @@ impl Board {
 
     pub fn from_fen(fen: &str) -> Result<Self, fen::FenError> {
         let mut board = fen::fen_to_board(Some(fen))?;
-        board.state.zobrist_key = Zobrist::init(&board);
+        board.init_hash();
 
         Ok(board)
     }
@@ -53,5 +53,28 @@ impl Board {
         self.bitboards[color][piece_type].set(square);
         self.occupancy[color].set(square);
         self.mailbox[square] = piece;
+    }
+
+    fn update_hash(&mut self, square: Square, piece: Piece) {
+        let color = piece.color();
+        let piece_type = piece.piece_type();
+        self.state.zobrist_key ^= self.zobrist.pieces[color][piece_type][square];
+    }
+
+    fn init_hash(&mut self) {
+        self.state.zobrist_key = 0;
+        for piece_type in 0..PieceType::COUNT {
+            for color in 0..Color::COUNT {
+                for square in self.bitboards[color][piece_type] {
+                    self.state.zobrist_key ^= self.zobrist.pieces[color][piece_type][square];
+                }
+            }
+        }
+
+        self.state.zobrist_key ^= self.zobrist.castling[self.state.castling_rights as usize]; // Castling rights
+        if self.state.en_passant != Square::None {
+            self.state.zobrist_key ^= self.zobrist.en_passant[self.state.en_passant]; // En passant
+        }
+        self.state.zobrist_key ^= self.zobrist.side_to_move[self.state.active_side]; // Side to move
     }
 }

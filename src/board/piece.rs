@@ -28,6 +28,10 @@ impl Piece {
     pub fn piece_type(self) -> PieceType {
         unsafe { std::mem::transmute((self as u8) >> 1) }
     }
+
+    pub fn from_index(index: usize) -> Self {
+        unsafe { std::mem::transmute(index as u8) }
+    }
 }
 
 impl<T> Index<Piece> for [T] {
