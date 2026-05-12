@@ -9,9 +9,9 @@ use rand_chacha::ChaCha20Rng;
 
 pub struct Zobrist {
     pub pieces: [[[u64; Square::COUNT]; PieceType::COUNT]; Color::COUNT], // 64 squares * 6 piece types * 2 colors
-    pub castling: [u64; 16],              // 16 castling rights (KQkq)
+    pub castling: [u64; 16],               // 16 castling rights (KQkq)
     pub en_passant: [u64; Square::COUNT], // 64 en passant squares (only 16 are valid but we can ignore the rest)
-    pub side_to_move: u64,                // 1 for white to move, 0 for black to move
+    pub side_to_move: [u64; Color::COUNT], // 0 for white to move, 1 for black to move
 }
 
 impl Zobrist {
@@ -24,7 +24,7 @@ impl Zobrist {
             pieces: [[[EMPTY; Square::COUNT]; PieceType::COUNT]; Color::COUNT],
             castling: [EMPTY; 16],
             en_passant: [EMPTY; Square::COUNT],
-            side_to_move: EMPTY,
+            side_to_move: [EMPTY; Color::COUNT],
         };
 
         for color in 0..Color::COUNT {
@@ -43,13 +43,11 @@ impl Zobrist {
             zobrist.en_passant[square] = random.random::<u64>();
         }
 
-        zobrist.side_to_move = random.random::<u64>();
+        for color in 0..Color::COUNT {
+            zobrist.side_to_move[color] = random.random::<u64>();
+        }
 
         zobrist
-    }
-
-    pub fn init(board: &Board) -> u64 {
-        todo!()
     }
 }
 
