@@ -4,10 +4,10 @@ use square::Square;
 use state::{GameHistory, GameState};
 use zobrist::Zobrist;
 
-mod bitboard;
+pub mod bitboard;
 mod fen;
-mod piece;
-mod square;
+pub mod piece;
+pub mod square;
 mod state;
 mod zobrist;
 

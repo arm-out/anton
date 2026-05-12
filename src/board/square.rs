@@ -34,6 +34,10 @@ impl Square {
     pub fn from_rank_and_file(rank: u8, file: u8) -> Self {
         Self::new(rank << 3 | file)
     }
+
+    pub fn from_idx(idx: usize) -> Self {
+        unsafe { std::mem::transmute(idx as u8) }
+    }
 }
 
 impl<T> Index<Square> for [T] {
