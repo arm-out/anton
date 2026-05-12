@@ -61,6 +61,6 @@ mod tests {
         assert_eq!(zobrist.pieces[0][0][0], 1432220013574475785);
         assert_eq!(zobrist.castling[0], 4926799129666148837);
         assert_eq!(zobrist.en_passant[0], 18043349099285482400);
-        assert_eq!(zobrist.side_to_move, 14831281805493032206);
+        assert_eq!(zobrist.side_to_move[0], 14831281805493032206);
     }
 }
