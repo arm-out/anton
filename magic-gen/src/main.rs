@@ -66,7 +66,7 @@ fn try_make_table(
 
 fn find_magics(slider: Slider, rng: &mut ThreadRng) {
     println!(
-        "pub const {}_MAGICS: &[MagicEntry; Square::NUM] = &[",
+        "pub const {}_MAGICS: &[Magic; Square::COUNT] = &[",
         match slider {
             Slider::Rook => "ROOK",
             Slider::Bishop => "BISHOP",
@@ -85,7 +85,7 @@ fn find_magics(slider: Slider, rng: &mut ThreadRng) {
         let MagicSet { magic, table } =
             find_magic(Square::from_idx(square), index_bits, rng, slider);
         println!(
-            "    Magic {{ mask: 0x{:016X}, magic: 0x{:016X}, shift: {}, offset: {} }},",
+            "    Magic {{ mask: Bitboard(0x{:016X}), magic: 0x{:016X}, shift: {}, offset: {} }},",
             magic.mask.0, magic.magic, magic.shift, table_size
         );
         table_size += table.len();
