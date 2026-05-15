@@ -2,21 +2,22 @@ use crate::{
     board::{bitboard::Bitboard, piece::Color, square::Square},
     movegen::{
         directions::{KING_SHIFTS, KNIGHT_SHIFTS, MoveShift, PAWN_SHIFT_BLACK, PAWN_SHIFT_WHITE},
-        magic::Magic,
+        magic::{BISHOP_MAGICS, BISHOP_TABLE_SIZE, Magic, ROOK_MAGICS, ROOK_TABLE_SIZE},
     },
 };
 
 mod directions;
 pub mod magic;
 
+#[derive(Debug)]
 pub struct MoveGenerator {
     king_moves: [Bitboard; Square::COUNT],
     knight_moves: [Bitboard; Square::COUNT],
     pawn_attacks: [[Bitboard; Square::COUNT]; Color::COUNT],
-    rook_moves: Vec<Bitboard>,
-    bishop_moves: Vec<Bitboard>,
-    // rook_magics: [Magic; Square::COUNT],
-    // bishop_magics: [Magic; Square::COUNT],
+    pub rook_moves: Vec<Bitboard>,
+    pub bishop_moves: Vec<Bitboard>,
+    rook_magics: [Magic; Square::COUNT],
+    bishop_magics: [Magic; Square::COUNT],
 }
 
 #[derive(Copy, Clone)]
@@ -34,8 +35,10 @@ impl MoveGenerator {
             king_moves: [Bitboard(0); Square::COUNT],
             knight_moves: [Bitboard(0); Square::COUNT],
             pawn_attacks: [[Bitboard(0); Square::COUNT]; Color::COUNT],
-            rook_moves: Vec::new(),
-            bishop_moves: Vec::new(),
+            rook_moves: vec![Bitboard(0); ROOK_TABLE_SIZE],
+            bishop_moves: vec![Bitboard(0); BISHOP_TABLE_SIZE],
+            rook_magics: ROOK_MAGICS,
+            bishop_magics: BISHOP_MAGICS,
         };
 
         for square in 0..Square::COUNT {
@@ -44,6 +47,9 @@ impl MoveGenerator {
             movegen.init_king_moves(Square::from_idx(square));
             movegen.init_knight_moves(Square::from_idx(square));
         }
+
+        movegen.init_slider_moves(Slider::Rook);
+        movegen.init_slider_moves(Slider::Bishop);
 
         movegen
     }
@@ -92,6 +98,35 @@ impl MoveGenerator {
         }
     }
 
+    fn init_slider_moves(&mut self, slider: Slider) {
+        for square in 0..Square::COUNT {
+            let magic = match slider {
+                Slider::Rook => self.rook_magics[square],
+                Slider::Bishop => self.bishop_magics[square],
+            };
+
+            let blockers = MoveGenerator::blocker_boards(magic.mask);
+            for blocker in blockers {
+                let moves = MoveGenerator::slider_moves(Square::from_idx(square), blocker, slider);
+                let table_index = magic.offset + MoveGenerator::magic_index(blocker, &magic);
+                let table_entry = match slider {
+                    Slider::Rook => &mut self.rook_moves[table_index],
+                    Slider::Bishop => &mut self.bishop_moves[table_index],
+                };
+                if table_entry.is_empty() {
+                    *table_entry = moves;
+                } else if *table_entry != moves {
+                    panic!(
+                        "Collision occurred for square {} with blockers {}",
+                        square, blocker
+                    );
+                }
+            }
+        }
+    }
+
+    // --------------------- MAGIC HELPERS ---------------------
+
     pub fn rook_mask(square: Square) -> Bitboard {
         let mut mask = Bitboard(0);
         let file = square.file();
@@ -137,12 +172,6 @@ impl MoveGenerator {
         }
 
         blockers
-    }
-
-    pub fn init_rook_magics(&mut self) {
-        let square = 0;
-        let mask = Self::rook_mask(Square::from_idx(square));
-        // let blockers = 2u64.pow(mask.count_ones() as u32);
     }
 
     pub fn slider_moves(square: Square, blockers: Bitboard, slider: Slider) -> Bitboard {

@@ -57,8 +57,8 @@ impl std::fmt::Display for Square {
             return write!(f, "None");
         }
 
-        let file = (self.file() as u8 + b'a') as char;
-        let rank = (self.rank() as u8 + 1) as char;
+        let file = (self.file() as u8 + b'A') as char;
+        let rank = (self.rank() as u8 + b'1') as char;
         write!(f, "{}{}", file, rank)
     }
 }
@@ -248,5 +248,13 @@ mod tests {
         assert_eq!(File::from_char('F'), File::F);
         assert_eq!(File::from_char('G'), File::G);
         assert_eq!(File::from_char('H'), File::H);
+    }
+
+    #[test]
+    fn test_square_display() {
+        assert_eq!(format!("{}", Square::A1), "A1");
+        assert_eq!(format!("{}", Square::H8), "H8");
+        assert_eq!(format!("{}", Square::D3), "D3");
+        assert_eq!(format!("{}", Square::F6), "F6");
     }
 }

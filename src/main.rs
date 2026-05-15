@@ -26,4 +26,5 @@ fn main() {
     // println!("Zobrist key: {}", board.state.zobrist_key);
 
     let movegen = movegen::MoveGenerator::new();
+    // println!("{:?}", movegen.bishop_moves);
 }
