@@ -1,7 +1,4 @@
-use crate::board::Board;
-
-pub mod board;
-mod movegen;
+use anton::movegen;
 
 fn main() {
     // let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";

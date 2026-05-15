@@ -62,6 +62,24 @@ impl Bitboard {
     pub const fn union(self, other: Self) -> Self {
         Bitboard(self.0 | other.0)
     }
+
+    pub fn edges_excluding_square(self, square: Square) -> Bitboard {
+        let file = Bitboard::from_file(square.file());
+        let rank = Bitboard::from_rank(square.rank());
+
+        (Bitboard::from_file(File::A) & !file)
+            | (Bitboard::from_file(File::H) & !file)
+            | (Bitboard::from_rank(Rank::R1) & !rank)
+            | (Bitboard::from_rank(Rank::R8) & !rank)
+    }
+
+    pub fn count_ones(self) -> u8 {
+        self.0.count_ones() as u8
+    }
+
+    pub fn is_empty(self) -> bool {
+        self.0 == 0
+    }
 }
 
 impl Iterator for Bitboard {
@@ -135,9 +153,9 @@ impl std::fmt::Display for Bitboard {
             for file in 0..8 {
                 let square = Square::from_rank_and_file(rank, file);
                 if self.contains(square) {
-                    write!(f, "X")?;
+                    write!(f, "X ")?;
                 } else {
-                    write!(f, ".")?;
+                    write!(f, ". ")?;
                 }
             }
             write!(f, "\n")?;
@@ -201,14 +219,14 @@ mod tests {
         let bb = Bitboard(0xFFFFFFFFFFFFFFFF);
         assert_eq!(
             format!("{bb}"),
-            "XXXXXXXX\n\
-             XXXXXXXX\n\
-             XXXXXXXX\n\
-             XXXXXXXX\n\
-             XXXXXXXX\n\
-             XXXXXXXX\n\
-             XXXXXXXX\n\
-             XXXXXXXX\n"
+            "X X X X X X X X \n\
+             X X X X X X X X \n\
+             X X X X X X X X \n\
+             X X X X X X X X \n\
+             X X X X X X X X \n\
+             X X X X X X X X \n\
+             X X X X X X X X \n\
+             X X X X X X X X \n"
         );
         let mut bb = Bitboard(0);
         bb.set(Square::A1);
@@ -217,14 +235,14 @@ mod tests {
         bb.set(Square::H2);
         assert_eq!(
             format!("{bb}"),
-            ".......X\n\
-             ........\n\
-             ........\n\
-             ........\n\
-             ...X....\n\
-             ........\n\
-             .......X\n\
-             X.......\n"
+            ". . . . . . . X \n\
+             . . . . . . . . \n\
+             . . . . . . . . \n\
+             . . . . . . . . \n\
+             . . . X . . . . \n\
+             . . . . . . . . \n\
+             . . . . . . . X \n\
+             X . . . . . . . \n"
         );
     }
 

@@ -1,7 +1,7 @@
 use std::ops::{Add, Index, IndexMut, Sub};
 
 #[rustfmt::skip]
-#[derive(Copy, Clone, Debug, PartialEq,Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
 // Little Endian Rank-File Mapping (LERF) https://www.chessprogramming.org/Square_Mapping_Considerations#Little-Endian_Rank-File_Mapping
 pub enum Square {
@@ -37,6 +37,29 @@ impl Square {
 
     pub fn from_idx(idx: usize) -> Self {
         unsafe { std::mem::transmute(idx as u8) }
+    }
+
+    pub fn try_offset(self, df: i8, dr: i8) -> Option<Self> {
+        let f = self.file() as i8 + df;
+        let r = self.rank() as i8 + dr;
+
+        if (0..8).contains(&f) && (0..8).contains(&r) {
+            Some(Self::from_rank_and_file(r as u8, f as u8))
+        } else {
+            None
+        }
+    }
+}
+
+impl std::fmt::Display for Square {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if *self == Square::None {
+            return write!(f, "None");
+        }
+
+        let file = (self.file() as u8 + b'a') as char;
+        let rank = (self.rank() as u8 + 1) as char;
+        write!(f, "{}{}", file, rank)
     }
 }
 
