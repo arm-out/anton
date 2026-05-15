@@ -9,24 +9,17 @@ struct MagicSet {
     table: Vec<Bitboard>,
 }
 
-const EMPTY_MAGIC: Magic = Magic {
-    mask: Bitboard(0),
-    magic: 0,
-    shift: 0,
-    offset: 0,
-};
-
 fn main() {
     let mut rng = rand::rng();
     find_magics(Slider::Rook, &mut rng);
-    // let bishop_magics = find_magics(Slider::Bishop);
+    find_magics(Slider::Bishop, &mut rng);
 }
 
 // Credit to Analog Hors https://analog-hors.github.io/site/magic-bitboards/
 fn find_magic(square: Square, index_bits: u8, rng: &mut ThreadRng, slider: Slider) -> MagicSet {
     let mask = match slider {
         Slider::Rook => MoveGenerator::rook_mask(square),
-        Slider::Bishop => todo!(),
+        Slider::Bishop => MoveGenerator::bishop_mask(square),
     };
 
     let shift = 64 - index_bits;
@@ -84,7 +77,9 @@ fn find_magics(slider: Slider, rng: &mut ThreadRng) {
     for square in 0..Square::COUNT {
         let index_bits = match slider {
             Slider::Rook => MoveGenerator::rook_mask(Square::from_idx(square)).count_ones() as u8,
-            Slider::Bishop => todo!(),
+            Slider::Bishop => {
+                MoveGenerator::bishop_mask(Square::from_idx(square)).count_ones() as u8
+            }
         };
 
         let MagicSet { magic, table } =

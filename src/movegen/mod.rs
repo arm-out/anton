@@ -104,6 +104,23 @@ impl MoveGenerator {
         mask
     }
 
+    pub fn bishop_mask(square: Square) -> Bitboard {
+        let mut mask = Bitboard(0);
+
+        for (df, dr) in BISHOP_DIRS {
+            let mut ray = square;
+            while let Some(sq) = ray.try_offset(df, dr) {
+                mask.set(sq);
+                ray = sq;
+            }
+        }
+
+        mask.clear(square);
+        mask &= !mask.edges_excluding_square(square);
+
+        mask
+    }
+
     pub fn blocker_boards(mask: Bitboard) -> Vec<Bitboard> {
         let mut blockers = Vec::new();
         let mut n = 0u64;
