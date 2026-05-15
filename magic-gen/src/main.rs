@@ -66,7 +66,7 @@ fn try_make_table(
 
 fn find_magics(slider: Slider, rng: &mut ThreadRng) {
     println!(
-        "pub const {}_MAGICS: &[Magic; Square::COUNT] = &[",
+        "pub const {}_MAGICS: [Magic; Square::COUNT] = [",
         match slider {
             Slider::Rook => "ROOK",
             Slider::Bishop => "BISHOP",
