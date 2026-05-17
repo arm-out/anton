@@ -25,4 +25,8 @@ impl MoveList {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+
+    pub fn get(&self, idx: usize) -> Move {
+        self.0[idx]
+    }
 }

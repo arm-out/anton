@@ -14,9 +14,10 @@ use crate::{
 };
 
 mod directions;
-pub mod magic;
+mod magic;
 mod movelist;
-mod moves;
+pub mod moves;
+mod perft;
 
 #[derive(Debug)]
 pub struct MoveGenerator {

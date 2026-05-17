@@ -1,10 +1,10 @@
+use crate::movegen::moves::Move;
 use bitboard::Bitboard;
+use piece::PieceType;
 use piece::{Color, Piece};
 use square::Square;
 use state::{GameHistory, GameState};
 use zobrist::Zobrist;
-
-use crate::board::piece::PieceType;
 
 pub mod bitboard;
 mod fen;
@@ -99,6 +99,14 @@ impl Board {
 
     pub fn get_ep_square(&self) -> Square {
         self.state.en_passant
+    }
+
+    pub fn make(&mut self, m: Move) -> bool {
+        todo!()
+    }
+
+    pub fn unmake(&mut self) {
+        todo!()
     }
 
     // ----------------------- STATE HELPERS ------------------------
