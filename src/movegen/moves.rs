@@ -1,9 +1,14 @@
+use crate::board::square::Square;
+
 // --------- MOVE DATA ---------
 // 0000  000000      000000
 // FLAGS FROM_SQUARE TO_SQUARE
 // -----------------------------
 pub struct Move(u16);
 
+// 0         0       0        0
+// Promotion Capture Special1 Special0
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum MoveType {
     Quiet = 0b0000,
     DoublePawnPush = 0b0001,
@@ -24,8 +29,28 @@ pub enum MoveType {
     QPromoCapture = 0b1111,
 }
 
+pub const PROMO_TYPES: [MoveType; 4] = [
+    MoveType::NPromotion,
+    MoveType::BPromotion,
+    MoveType::RPromotion,
+    MoveType::QPromotion,
+];
+
+pub const PROMO_CAPTURES: [MoveType; 4] = [
+    MoveType::NPromoCapture,
+    MoveType::BPromoCapture,
+    MoveType::RPromoCapture,
+    MoveType::QPromoCapture,
+];
+
 impl Move {
     pub fn new(from: Square, to: Square, flags: MoveType) -> Self {
         Self((to as u16) | ((from as u16) << 6) | (flags as u16) << 12)
+    }
+}
+
+impl MoveType {
+    pub fn from(flags: u8) -> Self {
+        unsafe { std::mem::transmute(flags) }
     }
 }

@@ -1,8 +1,10 @@
 use bitboard::Bitboard;
-use piece::{Color, Piece, PieceType};
+use piece::{Color, Piece};
 use square::Square;
 use state::{GameHistory, GameState};
 use zobrist::Zobrist;
+
+use crate::board::piece::PieceType;
 
 pub mod bitboard;
 mod fen;
@@ -12,7 +14,7 @@ mod state;
 mod zobrist;
 
 pub struct Board {
-    pub bitboards: [Bitboard; Piece::COUNT],
+    pub bitboards: [[Bitboard; PieceType::COUNT]; Color::COUNT],
     pub occupancy: [Bitboard; Color::COUNT],
     pub mailbox: [Piece; Square::COUNT],
     pub state: GameState,
@@ -24,7 +26,7 @@ impl Board {
     pub fn new() -> Self {
         const EMPTY: Bitboard = Bitboard(0);
         Self {
-            bitboards: [EMPTY; Piece::COUNT],
+            bitboards: [[EMPTY; PieceType::COUNT]; Color::COUNT],
             occupancy: [EMPTY; Color::COUNT],
             mailbox: [Piece::None; Square::COUNT],
             state: GameState {
@@ -47,7 +49,7 @@ impl Board {
         Ok(board)
     }
 
-    // --------------------- MOVEMENT FUNCTIONS ---------------------
+    // --------------------- MOVEMENT HELPERS ---------------------
 
     pub fn move_piece(&mut self, from: Square, to: Square, piece: Piece) {
         self.remove_piece(from, piece);
@@ -56,17 +58,50 @@ impl Board {
 
     // Add a piece to the board at the given square
     pub fn add_piece(&mut self, square: Square, piece: Piece) {
-        self.bitboards[piece].set(square);
+        self.bitboards[piece.color()][piece.ptype()].set(square);
         self.occupancy[piece.color()].set(square);
         self.mailbox[square] = piece;
     }
 
     // Remove a piece from the board at the given square
     pub fn remove_piece(&mut self, square: Square, piece: Piece) {
-        self.bitboards[piece].clear(square);
+        self.bitboards[piece.color()][piece.ptype()].clear(square);
         self.occupancy[piece.color()].clear(square);
         self.mailbox[square] = Piece::None;
     }
+
+    // Side to move
+    pub fn us(&self) -> Color {
+        self.state.active_side
+    }
+
+    // Oponent Side
+    pub fn them(&self) -> Color {
+        !self.state.active_side
+    }
+
+    // Our Pieces
+    pub fn our_pieces(&self) -> Bitboard {
+        self.occupancy[self.state.active_side]
+    }
+
+    pub fn their_pieces(&self) -> Bitboard {
+        self.occupancy[self.them()]
+    }
+
+    pub fn get_occupancy(&self) -> Bitboard {
+        self.occupancy[self.us()] | self.occupancy[self.them()]
+    }
+
+    pub fn get_piece(&self, piece_type: PieceType, color: Color) -> Bitboard {
+        self.bitboards[color][piece_type]
+    }
+
+    pub fn get_ep_square(&self) -> Square {
+        self.state.en_passant
+    }
+
+    // ----------------------- STATE HELPERS ------------------------
 
     pub fn set_ep_square(&mut self, square: Square) {
         self.state.zobrist_key ^= self.zobrist.en_passant[self.state.en_passant]; // Remove old EP square from hash
@@ -91,7 +126,7 @@ impl Board {
         self.state.zobrist_key ^= self.zobrist.castling[new_rights as usize]; // Add new castling rights to hash
     }
 
-    // --------------------- HASH FUNCTIONS ---------------------
+    // ----------------------- HASH FUNCTIONS -----------------------
 
     fn update_hash(&mut self, square: Square, piece: Piece) {
         self.state.zobrist_key ^= self.zobrist.pieces[piece][square];
@@ -99,10 +134,11 @@ impl Board {
 
     fn init_hash(&mut self) {
         self.state.zobrist_key = 0;
-        for piece in 0..Piece::COUNT {
-            for square in self.bitboards[piece] {
-                self.state.zobrist_key ^= self.zobrist.pieces[piece][square];
+        for (i, piece) in self.mailbox.iter().enumerate() {
+            if *piece == Piece::None {
+                continue;
             }
+            self.state.zobrist_key ^= self.zobrist.pieces[*piece][i];
         }
 
         self.state.zobrist_key ^= self.zobrist.castling[self.state.castling_rights as usize]; // Castling rights

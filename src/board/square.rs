@@ -77,6 +77,14 @@ impl<T> IndexMut<Square> for [T] {
     }
 }
 
+impl Add<i8> for Square {
+    type Output = Self;
+
+    fn add(self, rhs: i8) -> Self::Output {
+        unsafe { std::mem::transmute((self as u8 + rhs as u8) % 64) }
+    }
+}
+
 #[rustfmt::skip]
 #[derive(Copy, Clone, PartialEq, Debug)]
 #[repr(u8)]

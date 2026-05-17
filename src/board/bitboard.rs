@@ -1,6 +1,9 @@
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not, Shl, Shr};
+use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, Not, Shl, Shr};
 
-use crate::board::square::{File, Rank, Square};
+use crate::board::{
+    piece::Color,
+    square::{File, Rank, Square},
+};
 
 #[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(transparent)] // Guarantees that the layout of the struct is the same as the underlying type
@@ -31,6 +34,24 @@ impl Bitboard {
 
     pub fn from_square(square: Square) -> Self {
         Bitboard(1 << square as u8)
+    }
+
+    pub fn promotion_rank(color: Color) -> Self {
+        match color {
+            Color::White => Bitboard::from_rank(Rank::R8),
+            Color::Black => Bitboard::from_rank(Rank::R1),
+        }
+    }
+
+    pub fn fourth_rank(color: Color) -> Self {
+        match color {
+            Color::White => Bitboard::from_rank(Rank::R4),
+            Color::Black => Bitboard::from_rank(Rank::R5),
+        }
+    }
+
+    pub fn square_from_bb(bb: Bitboard) -> Square {
+        unsafe { std::mem::transmute(bb.0.trailing_zeros() as u8) }
     }
 
     pub const fn from_file(file: File) -> Self {
@@ -144,6 +165,14 @@ impl BitOr for Bitboard {
 impl BitOrAssign for Bitboard {
     fn bitor_assign(&mut self, rhs: Self) {
         self.0 |= rhs.0;
+    }
+}
+
+impl BitXor for Bitboard {
+    type Output = Self;
+
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        Bitboard(self.0 ^ rhs.0)
     }
 }
 

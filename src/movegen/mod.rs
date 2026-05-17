@@ -1,21 +1,30 @@
 use crate::{
-    board::{bitboard::Bitboard, piece::Color, square::Square},
+    board::{
+        Board,
+        bitboard::Bitboard,
+        piece::{Color, Piece, PieceType},
+        square::Square,
+    },
     movegen::{
         directions::{KING_SHIFTS, KNIGHT_SHIFTS, MoveShift, PAWN_SHIFT_BLACK, PAWN_SHIFT_WHITE},
         magic::{BISHOP_MAGICS, BISHOP_TABLE_SIZE, Magic, ROOK_MAGICS, ROOK_TABLE_SIZE},
+        movelist::MoveList,
+        moves::{Move, MoveType, PROMO_CAPTURES, PROMO_TYPES},
     },
 };
 
 mod directions;
 pub mod magic;
+mod movelist;
+mod moves;
 
 #[derive(Debug)]
 pub struct MoveGenerator {
     king_moves: [Bitboard; Square::COUNT],
     knight_moves: [Bitboard; Square::COUNT],
     pawn_attacks: [[Bitboard; Square::COUNT]; Color::COUNT],
-    pub rook_moves: Vec<Bitboard>,
-    pub bishop_moves: Vec<Bitboard>,
+    rook_moves: Vec<Bitboard>,
+    bishop_moves: Vec<Bitboard>,
     rook_magics: [Magic; Square::COUNT],
     bishop_magics: [Magic; Square::COUNT],
 }
@@ -53,6 +62,217 @@ impl MoveGenerator {
 
         movegen
     }
+
+    pub fn gen_moves(&self, board: &Board) -> MoveList {
+        let mask = !board.our_pieces(); // Squares we can move to
+        let mut ml = MoveList::default();
+        let color = board.us();
+
+        self.gen_king_moves(board, &mut ml, mask, color);
+        self.gen_knight_moves(board, &mut ml, mask, color);
+        self.gen_bishop_moves(board, &mut ml, mask, color);
+        self.gen_rook_moves(board, &mut ml, mask, color);
+        self.gen_queen_moves(board, &mut ml, mask, color);
+
+        self.gen_pawn_pushes(board, &mut ml, color);
+        self.gen_pawn_captures(board, &mut ml, color);
+
+        ml
+    }
+
+    // ---------------------- MOVE GENERATION ---------------------
+
+    fn gen_king_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+        let bb_piece = board.get_piece(PieceType::King, color);
+
+        for square in bb_piece {
+            let bb_moves = self.king_moves[square] & mask;
+            self.add_moves(
+                board,
+                ml,
+                square,
+                bb_moves,
+                PieceType::King,
+                MoveType::Quiet,
+            );
+        }
+    }
+
+    fn gen_knight_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+        let bb_piece = board.get_piece(PieceType::Knight, color);
+        for square in bb_piece {
+            let bb_moves = self.knight_moves[square] & mask;
+            self.add_moves(
+                board,
+                ml,
+                square,
+                bb_moves,
+                PieceType::Knight,
+                MoveType::Quiet,
+            );
+        }
+    }
+
+    fn gen_rook_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+        let bb_piece = board.get_piece(PieceType::Rook, color);
+        let bb_blockers = board.get_occupancy();
+
+        for square in bb_piece {
+            let bb_moves = self.get_rook_attacks(square, bb_blockers) & mask;
+            self.add_moves(
+                board,
+                ml,
+                square,
+                bb_moves,
+                PieceType::Rook,
+                MoveType::Quiet,
+            );
+        }
+    }
+
+    fn gen_bishop_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+        let bb_piece = board.get_piece(PieceType::Bishop, color);
+        let bb_blockers = board.get_occupancy();
+
+        for square in bb_piece {
+            let bb_moves = self.get_bishop_attacks(square, bb_blockers) & mask;
+            self.add_moves(
+                board,
+                ml,
+                square,
+                bb_moves,
+                PieceType::Bishop,
+                MoveType::Quiet,
+            );
+        }
+    }
+
+    fn gen_queen_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+        let bb_piece = board.get_piece(PieceType::Queen, color);
+        let bb_blockers = board.get_occupancy();
+
+        for square in bb_piece {
+            let bb_moves = self.get_queen_attacks(square, bb_blockers) & mask;
+            self.add_moves(
+                board,
+                ml,
+                square,
+                bb_moves,
+                PieceType::Queen,
+                MoveType::Quiet,
+            );
+        }
+    }
+
+    fn gen_pawn_pushes(&self, board: &Board, ml: &mut MoveList, color: Color) {
+        let bb_empty = !board.get_occupancy();
+        let bb_promo_rank = Bitboard::promotion_rank(color);
+        let bb_fourth_rank = Bitboard::fourth_rank(color);
+        let dir = if color == Color::White { 8 } else { -8 };
+        let bb_pieces = board.get_piece(PieceType::Pawn, color);
+
+        for square in bb_pieces {
+            // Single push
+            let push_square = square + dir;
+            let one_step = Bitboard::from_square(push_square) & bb_empty;
+            let two_steps = if dir > 0 {
+                (one_step << dir) & bb_empty & bb_fourth_rank
+            } else {
+                (one_step >> dir) & bb_empty & bb_fourth_rank
+            };
+
+            let push = one_step & !bb_promo_rank;
+            let double_push = two_steps;
+            let promos = one_step & bb_promo_rank;
+
+            self.add_moves(board, ml, square, push, PieceType::Pawn, MoveType::Quiet);
+            self.add_moves(
+                board,
+                ml,
+                square,
+                double_push,
+                PieceType::Pawn,
+                MoveType::DoublePawnPush,
+            );
+            self.add_promotion(ml, square, promos, false);
+        }
+    }
+
+    fn gen_pawn_captures(&self, board: &Board, ml: &mut MoveList, color: Color) {
+        let bb_opponent = board.their_pieces();
+        let bb_promo_rank = Bitboard::promotion_rank(color);
+        let bb_ep_square = Bitboard::from_square(board.get_ep_square());
+        let bb_pieces = board.get_piece(PieceType::Pawn, color);
+
+        for square in bb_pieces {
+            let moves = self.pawn_attacks[color][square];
+            let captures = moves & bb_opponent & !bb_promo_rank;
+            let ep_captures = moves & bb_ep_square;
+            let promo_captures = moves & bb_opponent & bb_promo_rank;
+
+            self.add_moves(
+                board,
+                ml,
+                square,
+                captures,
+                PieceType::Pawn,
+                MoveType::Quiet,
+            );
+            self.add_moves(
+                board,
+                ml,
+                square,
+                ep_captures,
+                PieceType::Pawn,
+                MoveType::EnPassant,
+            );
+            self.add_promotion(ml, square, promo_captures, true);
+        }
+    }
+
+    fn add_promotion(&self, ml: &mut MoveList, from: Square, to: Bitboard, capture: bool) {
+        if to.is_empty() {
+            return;
+        }
+
+        let promo_type = if capture { PROMO_CAPTURES } else { PROMO_TYPES };
+
+        for promo in promo_type {
+            for square in to {
+                let m = Move::new(from, square, promo);
+                ml.push(m);
+            }
+        }
+    }
+
+    fn add_moves(
+        &self,
+        board: &Board,
+        ml: &mut MoveList,
+        from: Square,
+        to: Bitboard,
+        ptype: PieceType,
+        kind: MoveType,
+    ) {
+        if kind == MoveType::Quiet {
+            for square in to {
+                let mut flags: u8 = kind as u8;
+                // Set capture flag
+                if board.mailbox[square] != Piece::None {
+                    flags |= 0b0100;
+                }
+
+                let m = Move::new(from, square, MoveType::from(flags));
+                ml.push(m);
+            }
+        } else {
+            let square = Bitboard::square_from_bb(to);
+            let m = Move::new(from, square, kind);
+            ml.push(m);
+        }
+    }
+
+    // ----------------------- INIT HELPERS -----------------------
 
     fn init_pawn_attacks(&mut self, square: Square, color: Color) {
         let mask = Bitboard::from_square(square);
@@ -198,6 +418,22 @@ impl MoveGenerator {
     pub fn magic_index(occupancy: Bitboard, magic: &Magic) -> usize {
         let blockers = occupancy & magic.mask;
         (blockers.0.wrapping_mul(magic.magic) >> magic.shift) as usize
+    }
+
+    fn get_rook_attacks(&self, square: Square, blockers: Bitboard) -> Bitboard {
+        let idx = MoveGenerator::magic_index(blockers, &self.rook_magics[square]);
+        self.rook_moves[idx]
+    }
+
+    fn get_bishop_attacks(&self, square: Square, blockers: Bitboard) -> Bitboard {
+        let idx = MoveGenerator::magic_index(blockers, &self.bishop_magics[square]);
+        self.bishop_moves[idx]
+    }
+
+    fn get_queen_attacks(&self, square: Square, blockers: Bitboard) -> Bitboard {
+        let r_idx = MoveGenerator::magic_index(blockers, &self.rook_magics[square]);
+        let b_idx = MoveGenerator::magic_index(blockers, &self.bishop_magics[square]);
+        self.rook_moves[r_idx] ^ self.bishop_moves[b_idx]
     }
 }
 

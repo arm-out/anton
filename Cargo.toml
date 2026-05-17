@@ -22,5 +22,6 @@ incremental = false
 overflow-checks = false
 
 [dependencies]
+arrayvec = "0.7.6"
 rand = "0.10.1"
 rand_chacha = "0.10.0"

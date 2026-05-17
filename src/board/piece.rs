@@ -1,4 +1,4 @@
-use std::ops::{Index, IndexMut, Not};
+use std::ops::{Add, Index, IndexMut, Not};
 
 #[repr(u8)]
 #[derive(Default, Copy, Clone, Debug, PartialEq)]
@@ -27,7 +27,7 @@ impl Piece {
     }
 
     #[inline]
-    pub fn piece_type(self) -> PieceType {
+    pub fn ptype(self) -> PieceType {
         unsafe { std::mem::transmute((self as u8) >> 1) }
     }
 
@@ -48,6 +48,14 @@ impl<T> Index<Piece> for [T] {
 impl<T> IndexMut<Piece> for [T] {
     fn index_mut(&mut self, piece: Piece) -> &mut Self::Output {
         &mut self[piece as usize]
+    }
+}
+
+impl Add<u8> for Piece {
+    type Output = Self;
+
+    fn add(self, rhs: u8) -> Self::Output {
+        unsafe { std::mem::transmute(self as u8 + rhs) }
     }
 }
 
@@ -141,18 +149,18 @@ mod tests {
 
     #[test]
     fn test_piece_piece_type() {
-        assert_eq!(Piece::WhitePawn.piece_type(), PieceType::Pawn);
-        assert_eq!(Piece::BlackPawn.piece_type(), PieceType::Pawn);
-        assert_eq!(Piece::WhiteKnight.piece_type(), PieceType::Knight);
-        assert_eq!(Piece::BlackKnight.piece_type(), PieceType::Knight);
-        assert_eq!(Piece::WhiteBishop.piece_type(), PieceType::Bishop);
-        assert_eq!(Piece::BlackBishop.piece_type(), PieceType::Bishop);
-        assert_eq!(Piece::WhiteRook.piece_type(), PieceType::Rook);
-        assert_eq!(Piece::BlackRook.piece_type(), PieceType::Rook);
-        assert_eq!(Piece::WhiteQueen.piece_type(), PieceType::Queen);
-        assert_eq!(Piece::BlackQueen.piece_type(), PieceType::Queen);
-        assert_eq!(Piece::WhiteKing.piece_type(), PieceType::King);
-        assert_eq!(Piece::BlackKing.piece_type(), PieceType::King);
+        assert_eq!(Piece::WhitePawn.ptype(), PieceType::Pawn);
+        assert_eq!(Piece::BlackPawn.ptype(), PieceType::Pawn);
+        assert_eq!(Piece::WhiteKnight.ptype(), PieceType::Knight);
+        assert_eq!(Piece::BlackKnight.ptype(), PieceType::Knight);
+        assert_eq!(Piece::WhiteBishop.ptype(), PieceType::Bishop);
+        assert_eq!(Piece::BlackBishop.ptype(), PieceType::Bishop);
+        assert_eq!(Piece::WhiteRook.ptype(), PieceType::Rook);
+        assert_eq!(Piece::BlackRook.ptype(), PieceType::Rook);
+        assert_eq!(Piece::WhiteQueen.ptype(), PieceType::Queen);
+        assert_eq!(Piece::BlackQueen.ptype(), PieceType::Queen);
+        assert_eq!(Piece::WhiteKing.ptype(), PieceType::King);
+        assert_eq!(Piece::BlackKing.ptype(), PieceType::King);
     }
 
     #[test]

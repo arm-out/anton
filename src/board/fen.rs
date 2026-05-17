@@ -258,53 +258,53 @@ mod tests {
         let mut board = Board::new();
         parse_pieces(fen, &mut board).unwrap();
         assert_eq!(
-            board.bitboards[Piece::WhitePawn],
+            board.bitboards[Color::White][PieceType::Pawn],
             Bitboard(0x0000_0000_0000_FF00)
         );
         assert_eq!(
-            board.bitboards[Piece::BlackPawn],
+            board.bitboards[Color::Black][PieceType::Pawn],
             Bitboard(0x00FF_0000_0000_0000)
         );
         assert_eq!(
-            board.bitboards[Piece::WhiteKnight],
+            board.bitboards[Color::White][PieceType::Knight],
             Bitboard(0x0000_0000_0000_0042)
         );
         assert_eq!(
-            board.bitboards[Piece::BlackKnight],
+            board.bitboards[Color::Black][PieceType::Knight],
             Bitboard(0x4200_0000_0000_0000)
         );
         assert_eq!(
-            board.bitboards[Piece::WhiteBishop],
+            board.bitboards[Color::White][PieceType::Bishop],
             Bitboard(0x0000_0000_0000_0024)
         );
         assert_eq!(
-            board.bitboards[Piece::BlackBishop],
+            board.bitboards[Color::Black][PieceType::Bishop],
             Bitboard(0x2400_0000_0000_0000)
         );
         assert_eq!(
-            board.bitboards[Piece::WhiteRook],
+            board.bitboards[Color::White][PieceType::Rook],
             Bitboard(0x0000_0000_0000_0081)
         );
         assert_eq!(
-            board.bitboards[Piece::BlackRook],
+            board.bitboards[Color::Black][PieceType::Rook],
             Bitboard(0x8100_0000_0000_0000)
         );
 
-        println!("{}", board.bitboards[Piece::WhiteQueen]);
+        println!("{:?}", board.bitboards[Color::White][PieceType::Queen]);
         assert_eq!(
-            board.bitboards[Piece::WhiteQueen],
+            board.bitboards[Color::White][PieceType::Queen],
             Bitboard(0x0000_0000_0000_0008)
         );
         assert_eq!(
-            board.bitboards[Piece::BlackQueen],
+            board.bitboards[Color::Black][PieceType::Queen],
             Bitboard(0x0800_0000_0000_0000)
         );
         assert_eq!(
-            board.bitboards[Piece::WhiteKing],
+            board.bitboards[Color::White][PieceType::King],
             Bitboard(0x0000_0000_0000_0010)
         );
         assert_eq!(
-            board.bitboards[Piece::BlackKing],
+            board.bitboards[Color::Black][PieceType::King],
             Bitboard(0x1000_0000_0000_0000)
         );
     }
