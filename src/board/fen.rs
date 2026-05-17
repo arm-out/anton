@@ -124,6 +124,10 @@ fn parse_color(fen2: &str, board: &mut Board) -> Result<(), FenError> {
 }
 
 fn parse_castling(fen3: &str, board: &mut Board) -> Result<(), FenError> {
+    if fen3 == DASH {
+        return Ok(());
+    }
+
     if fen3.len() > 4 || fen3.len() < 1 {
         return Err(FenError::InvalidCastlingRights(fen3.to_string()));
     }
