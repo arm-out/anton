@@ -1,4 +1,4 @@
-use crate::movegen::moves::Move;
+use crate::movegen::moves::{Move, MoveType};
 use bitboard::Bitboard;
 use piece::PieceType;
 use piece::{Color, Piece};
@@ -36,6 +36,7 @@ impl Board {
                 halfmove_clock: 0,
                 fullmove_number: 1,
                 zobrist_key: 0,
+                next_move: Move(0),
             },
             history: GameHistory::new(),
             zobrist: Zobrist::new(),
@@ -51,16 +52,12 @@ impl Board {
 
     // --------------------- MOVEMENT HELPERS ---------------------
 
-    pub fn move_piece(&mut self, from: Square, to: Square, piece: Piece) {
-        self.remove_piece(from, piece);
-        self.add_piece(to, piece);
-    }
-
     // Add a piece to the board at the given square
     pub fn add_piece(&mut self, square: Square, piece: Piece) {
         self.bitboards[piece.color()][piece.ptype()].set(square);
         self.occupancy[piece.color()].set(square);
         self.mailbox[square] = piece;
+        self.update_hash(square, piece);
     }
 
     // Remove a piece from the board at the given square
@@ -68,6 +65,12 @@ impl Board {
         self.bitboards[piece.color()][piece.ptype()].clear(square);
         self.occupancy[piece.color()].clear(square);
         self.mailbox[square] = Piece::None;
+        self.update_hash(square, piece);
+    }
+
+    pub fn move_piece(&mut self, from: Square, to: Square, piece: Piece) {
+        self.remove_piece(from, piece);
+        self.add_piece(to, piece);
     }
 
     // Side to move
@@ -101,12 +104,98 @@ impl Board {
         self.state.en_passant
     }
 
+    pub fn get_piece_at(&self, square: Square) -> Piece {
+        self.mailbox[square]
+    }
+
+    // Make Move
+    // 1. Push current state to history
+    // 2. Update State and Board
+    //    - Update Bitboards and Mailbox
+    //    - Update halfmove
+    //    - Update EP Squares
+    //    - Update Castling Rights
+    //    - Update Full Move Number
+    //    - Update Zobrist Key
+    // 3. Check if legal
     pub fn make(&mut self, m: Move) -> bool {
+        // Push current state to history
+        let mut curr_state = self.state;
+        curr_state.next_move = m;
+        self.history.push(curr_state);
+
+        let move_kind = m.kind();
+        let us = self.us();
+
+        match move_kind {
+            MoveType::Quiet => self.make_quiet(m),
+            MoveType::DoublePawnPush => {
+                self.make_quiet(m);
+                self.state.en_passant = if us == Color::White {
+                    m.from() + 8
+                } else {
+                    m.from() - 8
+                };
+            }
+            MoveType::Capture => self.make_capture(m),
+            MoveType::EnPassant => self.make_capture(m),
+            MoveType::NPromotion => self.make_promotion(m, PieceType::Knight, false),
+            MoveType::BPromotion => self.make_promotion(m, PieceType::Bishop, false),
+            MoveType::RPromotion => self.make_promotion(m, PieceType::Rook, false),
+            MoveType::QPromotion => self.make_promotion(m, PieceType::Queen, false),
+            MoveType::NPromoCapture => {
+                self.make_capture(m);
+                self.make_promotion(m, PieceType::Knight, true);
+            }
+            MoveType::BPromoCapture => {
+                self.make_capture(m);
+                self.make_promotion(m, PieceType::Bishop, true);
+            }
+            MoveType::RPromoCapture => {
+                self.make_capture(m);
+                self.make_promotion(m, PieceType::Rook, true);
+            }
+            MoveType::QPromoCapture => {
+                self.make_capture(m);
+                self.make_promotion(m, PieceType::Queen, true);
+            }
+            _ => todo!(), // TODO: Handle Castling
+        }
+
         todo!()
     }
 
     pub fn unmake(&mut self) {
         todo!()
+    }
+
+    pub fn make_quiet(&mut self, m: Move) {
+        let from = m.from();
+        let to = m.to();
+        let piece = self.get_piece_at(from);
+        self.move_piece(from, to, piece);
+    }
+
+    pub fn make_capture(&mut self, m: Move) {
+        let from = m.from();
+        let to = m.to();
+        let captured = self.get_piece_at(to);
+        let piece = self.get_piece_at(from);
+        self.remove_piece(to, captured);
+        self.move_piece(from, to, piece);
+    }
+
+    pub fn make_promotion(&mut self, m: Move, pt: PieceType, capture: bool) {
+        if capture {
+            self.make_capture(m);
+        } else {
+            self.make_quiet(m);
+        }
+
+        let to = m.to();
+        let promo_piece = Piece::from_index(((2 * pt as u8) + self.us() as u8) as usize);
+        self.remove_piece(to, self.get_piece_at(to));
+        self.add_piece(to, promo_piece);
     }
 
     // ----------------------- STATE HELPERS ------------------------

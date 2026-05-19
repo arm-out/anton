@@ -48,6 +48,22 @@ impl Move {
     pub fn new(from: Square, to: Square, flags: MoveType) -> Self {
         Self((to as u16) | ((from as u16) << 6) | (flags as u16) << 12)
     }
+
+    pub fn is_capture(&self) -> bool {
+        unsafe { std::mem::transmute((self.0 & 0b0100_0000_0000_0000) != 0) }
+    }
+
+    pub fn kind(&self) -> MoveType {
+        MoveType::from(((self.0 & 0b1111_000000_000000) >> 12) as u8)
+    }
+
+    pub fn from(&self) -> Square {
+        unsafe { std::mem::transmute(((self.0 & 0b0000_111111_000000) >> 6) as u8) }
+    }
+
+    pub fn to(&self) -> Square {
+        unsafe { std::mem::transmute((self.0 & 0b0000_000000_111111) as u8) }
+    }
 }
 
 impl MoveType {

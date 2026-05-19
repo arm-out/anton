@@ -1,4 +1,7 @@
-use crate::board::{piece::Color, square::Square};
+use crate::{
+    board::{piece::Color, square::Square},
+    movegen::moves::Move,
+};
 
 #[derive(Copy, Clone)]
 pub struct GameState {
@@ -10,7 +13,7 @@ pub struct GameState {
     pub zobrist_key: u64,
     // pub phase_value: i16,
     // pub psqt_value: i16,
-    // pub next_move: Option<Move>,
+    pub next_move: Move,
 }
 
 pub type GameHistory = Vec<GameState>;

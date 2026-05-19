@@ -38,17 +38,6 @@ impl Square {
     pub fn from_idx(idx: usize) -> Self {
         unsafe { std::mem::transmute(idx as u8) }
     }
-
-    pub fn try_offset(self, df: i8, dr: i8) -> Option<Self> {
-        let f = self.file() as i8 + df;
-        let r = self.rank() as i8 + dr;
-
-        if (0..8).contains(&f) && (0..8).contains(&r) {
-            Some(Self::from_rank_and_file(r as u8, f as u8))
-        } else {
-            None
-        }
-    }
 }
 
 impl std::fmt::Display for Square {
@@ -77,11 +66,19 @@ impl<T> IndexMut<Square> for [T] {
     }
 }
 
-impl Add<i8> for Square {
+impl Add<u8> for Square {
     type Output = Self;
 
-    fn add(self, rhs: i8) -> Self::Output {
+    fn add(self, rhs: u8) -> Self::Output {
         unsafe { std::mem::transmute((self as u8 + rhs as u8) % 64) }
+    }
+}
+
+impl Sub<u8> for Square {
+    type Output = Self;
+
+    fn sub(self, rhs: u8) -> Self::Output {
+        unsafe { std::mem::transmute((self as u8 - rhs as u8) % 64) }
     }
 }
 
