@@ -22,7 +22,7 @@ fn main() {
 
     println!("Game state:");
     println!("Active side: {:?}", board.state.active_side);
-    println!("Castling rights: {:b}", board.state.castling_rights);
+    // println!("Castling rights: {:b}", board.state.castling_rights);
     println!("En passant: {:?}", board.state.en_passant);
     println!("Halfmove clock: {}", board.state.halfmove_clock);
     println!("Fullmove number: {}", board.state.fullmove_number);

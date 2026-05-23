@@ -134,10 +134,10 @@ fn parse_castling(fen3: &str, board: &mut Board) -> Result<(), FenError> {
 
     for c in fen3.chars() {
         match c {
-            'K' => board.state.castling_rights |= 1 << 3,
-            'Q' => board.state.castling_rights |= 1 << 2,
-            'k' => board.state.castling_rights |= 1 << 1,
-            'q' => board.state.castling_rights |= 1 << 0,
+            'K' => board.state.castling_rights.raw |= 1 << 3,
+            'Q' => board.state.castling_rights.raw |= 1 << 2,
+            'k' => board.state.castling_rights.raw |= 1 << 1,
+            'q' => board.state.castling_rights.raw |= 1 << 0,
             _ => return Err(FenError::InvalidCastlingRights(fen3.to_string())),
         }
     }
@@ -330,27 +330,27 @@ mod tests {
         let fen = "K";
         let mut board = Board::new();
         parse_castling(fen, &mut board).unwrap();
-        assert_eq!(board.state.castling_rights, 1 << 3);
+        assert_eq!(board.state.castling_rights.raw(), 1 << 3);
         let fen = "Q";
         let mut board = Board::new();
         parse_castling(fen, &mut board).unwrap();
-        assert_eq!(board.state.castling_rights, 1 << 2);
+        assert_eq!(board.state.castling_rights.raw(), 1 << 2);
         let fen = "k";
         let mut board = Board::new();
         parse_castling(fen, &mut board).unwrap();
-        assert_eq!(board.state.castling_rights, 1 << 1);
+        assert_eq!(board.state.castling_rights.raw(), 1 << 1);
         let fen = "q";
         let mut board = Board::new();
         parse_castling(fen, &mut board).unwrap();
-        assert_eq!(board.state.castling_rights, 1 << 0);
+        assert_eq!(board.state.castling_rights.raw(), 1 << 0);
         let fen = "KQkq";
         let mut board = Board::new();
         parse_castling(fen, &mut board).unwrap();
-        assert_eq!(board.state.castling_rights, 0b1111);
+        assert_eq!(board.state.castling_rights.raw(), 0b1111);
         let fen = "Kkq";
         let mut board = Board::new();
         parse_castling(fen, &mut board).unwrap();
-        assert_eq!(board.state.castling_rights, 0b1011);
+        assert_eq!(board.state.castling_rights.raw(), 0b1011);
     }
 
     #[test]
