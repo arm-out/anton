@@ -1,4 +1,5 @@
 use crate::board::castling::{CastlingKind, CastlingPerms};
+use crate::evaluation::piece_value;
 use crate::movegen::MoveGenerator;
 use crate::movegen::moves::{Move, MoveType};
 use bitboard::Bitboard;
@@ -39,6 +40,7 @@ impl Board {
                 halfmove_clock: 0,
                 fullmove_number: 1,
                 zobrist_key: 0,
+                material: [0; Color::COUNT],
                 next_move: Move(0),
                 captured: Piece::None,
             },
@@ -61,6 +63,7 @@ impl Board {
         self.bitboards[piece.color()][piece.ptype()].set(square);
         self.occupancy[piece.color()].set(square);
         self.mailbox[square] = piece;
+        self.state.material[piece.color()] += piece_value(piece);
         self.update_hash(square, piece);
     }
 
@@ -69,6 +72,7 @@ impl Board {
         self.bitboards[piece.color()][piece.ptype()].clear(square);
         self.occupancy[piece.color()].clear(square);
         self.mailbox[square] = Piece::None;
+        self.state.material[piece.color()] -= piece_value(piece);
         self.update_hash(square, piece);
     }
 
@@ -190,12 +194,16 @@ impl Board {
 
     pub fn unmake(&mut self) {
         let captured = self.state.captured; // Captured Piece
+        let material = self.state.material;
 
         if let Some(state) = self.history.pop() {
             self.state = state;
         } else {
             return;
         }
+
+        let restored_material = self.state.material;
+        self.state.material = material;
 
         // Move to undo
         let m = self.state.next_move;
@@ -217,6 +225,8 @@ impl Board {
             MoveType::CastleKingside => self.unmake_castle(m, true),
             MoveType::CastleQueenside => self.unmake_castle(m, false),
         }
+
+        debug_assert_eq!(self.state.material, restored_material);
     }
 
     pub fn make_quiet(&mut self, m: Move) {
