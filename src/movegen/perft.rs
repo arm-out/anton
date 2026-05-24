@@ -13,7 +13,8 @@ mod tests {
         for i in 0..ml.len() {
             let m = ml.get(i);
 
-            if board.make(m) {
+            // println!("{i}: {m}");
+            if board.make(m, mg) {
                 leaf_nodes += perft(board, depth - 1, mg);
                 board.unmake();
             }

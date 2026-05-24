@@ -38,6 +38,39 @@ impl Square {
     pub fn from_idx(idx: usize) -> Self {
         unsafe { std::mem::transmute(idx as u8) }
     }
+
+    pub fn try_offset(self, df: i8, dr: i8) -> Option<Self> {
+        let f = self.file() as i8 + df;
+        let r = self.rank() as i8 + dr;
+
+        if (0..8).contains(&f) && (0..8).contains(&r) {
+            Some(Self::from_rank_and_file(r as u8, f as u8))
+        } else {
+            None
+        }
+    }
+
+    pub const fn ep_square(square: Square) -> Square {
+        match square {
+            Square::A2 => Square::A3,
+            Square::B2 => Square::B3,
+            Square::C2 => Square::C3,
+            Square::D2 => Square::D3,
+            Square::E2 => Square::E3,
+            Square::F2 => Square::F3,
+            Square::G2 => Square::G3,
+            Square::H2 => Square::H3,
+            Square::A7 => Square::A6,
+            Square::B7 => Square::B6,
+            Square::C7 => Square::C6,
+            Square::D7 => Square::D6,
+            Square::E7 => Square::E6,
+            Square::F7 => Square::F6,
+            Square::G7 => Square::G6,
+            Square::H7 => Square::H6,
+            _ => panic!("Invalid EP Square"),
+        }
+    }
 }
 
 impl std::fmt::Display for Square {

@@ -60,7 +60,7 @@ impl Add<u8> for Piece {
 }
 
 #[repr(u8)]
-#[derive(Default, PartialEq, Debug)]
+#[derive(Copy, Clone, Default, PartialEq, Debug)]
 pub enum PieceType {
     Pawn,
     Knight,

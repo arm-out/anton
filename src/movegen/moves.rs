@@ -5,7 +5,9 @@ use crate::board::square::Square;
 // FLAGS FROM_SQUARE TO_SQUARE
 // -----------------------------
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub struct Move(u16);
+pub struct Move(pub u16);
+
+// 0101 001001 000000
 
 // 0         0       0        0
 // Promotion Capture Special1 Special0
@@ -69,5 +71,38 @@ impl Move {
 impl MoveType {
     pub fn from(flags: u8) -> Self {
         unsafe { std::mem::transmute(flags) }
+    }
+}
+
+impl std::fmt::Display for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let from = self.from();
+        let to = self.to();
+        let kind = self.kind();
+
+        write!(f, "{} {} {}", from, to, kind)
+    }
+}
+
+impl std::fmt::Display for MoveType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kind = match self {
+            MoveType::Quiet => String::from("Quiet"),
+            MoveType::DoublePawnPush => String::from("DoublePawnPush"),
+            MoveType::CastleKingside => String::from("CastleKingside"),
+            MoveType::CastleQueenside => String::from("CastleQueenside"),
+            MoveType::Capture => String::from("Capture"),
+            MoveType::EnPassant => String::from("EnPassant"),
+            MoveType::NPromotion => String::from("NPromotion"),
+            MoveType::BPromotion => String::from("BPromotion"),
+            MoveType::RPromotion => String::from("RPromotion"),
+            MoveType::QPromotion => String::from("QPromotion"),
+            MoveType::NPromoCapture => String::from("NPromoCapture"),
+            MoveType::BPromoCapture => String::from("BPromoCapture"),
+            MoveType::RPromoCapture => String::from("RPromoCapture"),
+            MoveType::QPromoCapture => String::from("QPromoCapture"),
+        };
+
+        write!(f, "{}", kind)
     }
 }
