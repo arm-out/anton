@@ -5,7 +5,9 @@ use crate::board::{
 
 pub type Score = i16;
 
-pub const PIECE_VALUES: [u16; PieceType::COUNT] = [100, 320, 330, 500, 900, 0];
+// Larry Kaufman centipawn scale
+// https://www.chessprogramming.org/Point_Value
+pub const PIECE_VALUES: [u16; PieceType::COUNT] = [100, 350, 350, 525, 1000, 0];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Evaluation {
