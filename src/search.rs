@@ -14,7 +14,7 @@ pub struct SearchResult {
 }
 
 pub struct Search {
-    pub movegen: MoveGenerator,
+    movegen: MoveGenerator,
 }
 
 impl Search {
@@ -53,6 +53,32 @@ impl Search {
             best_move,
             score: best_score,
         }
+    }
+
+    pub fn apply_uci_move(&self, board: &mut Board, uci_move: &str) -> Result<(), String> {
+        let Some(m) = self.find_legal_move(board, uci_move) else {
+            return Err(format!("invalid move: {uci_move}"));
+        };
+
+        if !board.make(m, &self.movegen) {
+            return Err(format!("illegal move: {uci_move}"));
+        }
+
+        Ok(())
+    }
+
+    fn find_legal_move(&self, board: &Board, uci_move: &str) -> Option<Move> {
+        let moves = self.movegen.gen_moves(board);
+
+        for i in 0..moves.len() {
+            let m = moves.get(i);
+
+            if m.to_uci() == uci_move {
+                return Some(m);
+            }
+        }
+
+        None
     }
 
     fn negamax(&self, board: &mut Board, depth: u8, mut alpha: Score, beta: Score) -> Score {

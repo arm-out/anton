@@ -11,7 +11,7 @@ pub enum UCICommand {
     Stop,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct GoCommand {
     pub depth: Option<u8>,
     pub movetime_ms: Option<u64>,
@@ -22,13 +22,13 @@ pub struct GoCommand {
     pub infinite: bool,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PositionSource {
     Fen(String),
     Startpos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct PositionCommand {
     pub source: PositionSource,
     pub moves: Vec<String>,
