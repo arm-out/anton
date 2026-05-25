@@ -31,21 +31,17 @@ impl Engine {
         }
     }
 
-    pub fn handle_command(&mut self, command: EngineCommand) -> EngineAction {
+    pub fn handle_command(&mut self, command: EngineCommand) -> Option<String> {
         match command {
-            EngineCommand::Position(position) => {
-                let output = match self.set_position(position) {
-                    Ok(()) => Vec::new(),
-                    Err(message) => vec![protocol::info_string(&message)],
-                };
-
-                EngineAction::Continue(output)
-            }
+            EngineCommand::Position(position) => self
+                .set_position(position)
+                .err()
+                .map(|message| protocol::info_string(&message)),
             EngineCommand::Go(_) => {
                 let result = self.search.search(&mut self.board);
-                EngineAction::Continue(vec![protocol::bestmove(result.best_move)])
+                Some(protocol::bestmove(result.best_move))
             }
-            EngineCommand::Stop => EngineAction::Continue(vec![protocol::bestmove_none()]),
+            EngineCommand::Stop => Some(protocol::bestmove_none()),
         }
     }
 
@@ -106,11 +102,6 @@ impl Default for Engine {
     }
 }
 
-pub enum EngineAction {
-    Continue(Vec<String>),
-    Quit,
-}
-
 pub enum EngineCommand {
     Position(PositionCommand),
     Go(GoCommand),
@@ -125,15 +116,12 @@ pub fn spawn_engine_thread(
         let mut engine = Engine::new();
 
         for command in command_rx {
-            match engine.handle_command(command) {
-                EngineAction::Continue(messages) => {
-                    for message in messages {
-                        if output_tx.send(message).is_err() {
-                            return;
-                        }
-                    }
-                }
-                EngineAction::Quit => return,
+            let Some(message) = engine.handle_command(command) else {
+                continue;
+            };
+
+            if output_tx.send(message).is_err() {
+                return;
             }
         }
     })
