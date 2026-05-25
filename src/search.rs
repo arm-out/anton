@@ -13,6 +13,13 @@ pub struct SearchResult {
     pub score: Score,
 }
 
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub struct SearchStats {
+    pub nodes: u64,
+    pub leaves: u64,
+    pub beta_cutoffs: u64,
+}
+
 pub struct Search {
     movegen: MoveGenerator,
 }
@@ -25,6 +32,32 @@ impl Search {
     }
 
     pub fn search(&self, board: &mut Board) -> SearchResult {
+        self.search_depth_with_stats(board, SEARCH_DEPTH).0
+    }
+
+    pub fn search_depth_with_stats(
+        &self,
+        board: &mut Board,
+        depth: u8,
+    ) -> (SearchResult, SearchStats) {
+        let mut stats = SearchStats {
+            nodes: 1,
+            leaves: 0,
+            beta_cutoffs: 0,
+        };
+
+        if depth == 0 {
+            stats.leaves = 1;
+
+            return (
+                SearchResult {
+                    best_move: None,
+                    score: board.state.evaluation.score(board.us()),
+                },
+                stats,
+            );
+        }
+
         let mut best_move = None;
         let mut best_score = -INF;
         let mut alpha = -INF;
@@ -38,7 +71,7 @@ impl Search {
                 continue;
             }
 
-            let score = -self.negamax(board, SEARCH_DEPTH - 1, -beta, -alpha);
+            let score = -self.negamax(board, depth - 1, -beta, -alpha, &mut stats);
             board.unmake();
 
             if score > best_score {
@@ -49,10 +82,13 @@ impl Search {
             alpha = alpha.max(score);
         }
 
-        SearchResult {
-            best_move,
-            score: best_score,
-        }
+        (
+            SearchResult {
+                best_move,
+                score: best_score,
+            },
+            stats,
+        )
     }
 
     pub fn apply_uci_move(&self, board: &mut Board, uci_move: &str) -> Result<(), String> {
@@ -81,8 +117,18 @@ impl Search {
         None
     }
 
-    fn negamax(&self, board: &mut Board, depth: u8, mut alpha: Score, beta: Score) -> Score {
+    fn negamax(
+        &self,
+        board: &mut Board,
+        depth: u8,
+        mut alpha: Score,
+        beta: Score,
+        stats: &mut SearchStats,
+    ) -> Score {
+        stats.nodes += 1;
+
         if depth == 0 {
+            stats.leaves += 1;
             return board.state.evaluation.score(board.us());
         }
 
@@ -96,13 +142,14 @@ impl Search {
                 continue;
             }
 
-            let score = -self.negamax(board, depth - 1, -beta, -alpha);
+            let score = -self.negamax(board, depth - 1, -beta, -alpha, stats);
             board.unmake();
 
             best_score = best_score.max(score);
             alpha = alpha.max(score);
 
             if alpha >= beta {
+                stats.beta_cutoffs += 1;
                 break;
             }
         }

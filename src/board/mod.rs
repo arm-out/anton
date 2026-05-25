@@ -17,6 +17,7 @@ pub mod square;
 mod state;
 mod zobrist;
 
+#[derive(Clone)]
 pub struct Board {
     pub bitboards: [[Bitboard; PieceType::COUNT]; Color::COUNT],
     pub occupancy: [Bitboard; Color::COUNT],

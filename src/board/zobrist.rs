@@ -6,6 +6,7 @@ use crate::board::{
 use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
+#[derive(Clone)]
 pub struct Zobrist {
     pub pieces: [[u64; Square::COUNT]; Piece::COUNT], // 64 squares * 12 pieces
     pub castling: [u64; 16],                          // 16 castling rights (KQkq)
