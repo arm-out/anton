@@ -13,11 +13,42 @@ pub struct SearchResult {
     pub score: Score,
 }
 
+#[cfg(feature = "search-stats")]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct SearchStats {
     pub nodes: u64,
     pub leaves: u64,
     pub beta_cutoffs: u64,
+}
+
+trait SearchObserver {
+    fn root(&mut self) {}
+    fn node(&mut self) {}
+    fn leaf(&mut self) {}
+    fn beta_cutoff(&mut self) {}
+}
+
+struct NoStats;
+
+impl SearchObserver for NoStats {}
+
+#[cfg(feature = "search-stats")]
+impl SearchObserver for SearchStats {
+    fn root(&mut self) {
+        self.nodes += 1;
+    }
+
+    fn node(&mut self) {
+        self.nodes += 1;
+    }
+
+    fn leaf(&mut self) {
+        self.leaves += 1;
+    }
+
+    fn beta_cutoff(&mut self) {
+        self.beta_cutoffs += 1;
+    }
 }
 
 pub struct Search {
@@ -32,30 +63,42 @@ impl Search {
     }
 
     pub fn search(&self, board: &mut Board) -> SearchResult {
-        self.search_depth_with_stats(board, SEARCH_DEPTH).0
+        self.search_depth(board, SEARCH_DEPTH)
     }
 
+    pub fn search_depth(&self, board: &mut Board, depth: u8) -> SearchResult {
+        let mut observer = NoStats;
+
+        self.search_depth_inner(board, depth, &mut observer)
+    }
+
+    #[cfg(feature = "search-stats")]
     pub fn search_depth_with_stats(
         &self,
         board: &mut Board,
         depth: u8,
     ) -> (SearchResult, SearchStats) {
-        let mut stats = SearchStats {
-            nodes: 1,
-            leaves: 0,
-            beta_cutoffs: 0,
-        };
+        let mut stats = SearchStats::default();
+        let result = self.search_depth_inner(board, depth, &mut stats);
+
+        (result, stats)
+    }
+
+    fn search_depth_inner<O: SearchObserver>(
+        &self,
+        board: &mut Board,
+        depth: u8,
+        observer: &mut O,
+    ) -> SearchResult {
+        observer.root();
 
         if depth == 0 {
-            stats.leaves = 1;
+            observer.leaf();
 
-            return (
-                SearchResult {
-                    best_move: None,
-                    score: board.state.evaluation.score(board.us()),
-                },
-                stats,
-            );
+            return SearchResult {
+                best_move: None,
+                score: board.state.evaluation.score(board.us()),
+            };
         }
 
         let mut best_move = None;
@@ -71,7 +114,7 @@ impl Search {
                 continue;
             }
 
-            let score = -self.negamax(board, depth - 1, -beta, -alpha, &mut stats);
+            let score = -self.negamax(board, depth - 1, -beta, -alpha, observer);
             board.unmake();
 
             if score > best_score {
@@ -82,13 +125,10 @@ impl Search {
             alpha = alpha.max(score);
         }
 
-        (
-            SearchResult {
-                best_move,
-                score: best_score,
-            },
-            stats,
-        )
+        SearchResult {
+            best_move,
+            score: best_score,
+        }
     }
 
     pub fn apply_uci_move(&self, board: &mut Board, uci_move: &str) -> Result<(), String> {
@@ -117,18 +157,18 @@ impl Search {
         None
     }
 
-    fn negamax(
+    fn negamax<O: SearchObserver>(
         &self,
         board: &mut Board,
         depth: u8,
         mut alpha: Score,
         beta: Score,
-        stats: &mut SearchStats,
+        observer: &mut O,
     ) -> Score {
-        stats.nodes += 1;
+        observer.node();
 
         if depth == 0 {
-            stats.leaves += 1;
+            observer.leaf();
             return board.state.evaluation.score(board.us());
         }
 
@@ -142,14 +182,14 @@ impl Search {
                 continue;
             }
 
-            let score = -self.negamax(board, depth - 1, -beta, -alpha, stats);
+            let score = -self.negamax(board, depth - 1, -beta, -alpha, observer);
             board.unmake();
 
             best_score = best_score.max(score);
             alpha = alpha.max(score);
 
             if alpha >= beta {
-                stats.beta_cutoffs += 1;
+                observer.beta_cutoff();
                 break;
             }
         }

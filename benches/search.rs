@@ -1,3 +1,5 @@
+#![cfg(feature = "search-stats")]
+
 use anton::{board::Board, search::Search};
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
