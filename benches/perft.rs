@@ -28,10 +28,10 @@ const POSITIONS: &[PerftPosition] = &[
         nodes: 674_624,
     },
     PerftPosition {
-        name: "position4_d5",
+        name: "position4_d4",
         fen: "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
-        depth: 5,
-        nodes: 15_833_292,
+        depth: 4,
+        nodes: 422_333,
     },
 ];
 
