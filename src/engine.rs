@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     board::Board,
-    movegen::{MoveGenerator, moves::Move},
+    movegen::moves::Move,
     search::Search,
     uci::{
         command::{GoCommand, PositionCommand, PositionSource},
