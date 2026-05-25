@@ -2,7 +2,7 @@
 name = "anton"
 version = "0.1.0"
 edition = "2024"
-authors = ["Armin Suraj"]
+authors = ["Armin (armout) Suraj"]
 
 [profile.dev]
 opt-level = 0
