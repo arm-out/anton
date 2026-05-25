@@ -14,7 +14,7 @@ pub struct SearchResult {
 }
 
 pub struct Search {
-    movegen: MoveGenerator,
+    pub movegen: MoveGenerator,
 }
 
 impl Search {

@@ -17,7 +17,6 @@ const STARTPOS: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1
 
 pub struct Engine {
     board: Board,
-    movegen: MoveGenerator,
     search: Search,
 }
 
@@ -25,7 +24,6 @@ impl Engine {
     pub fn new() -> Self {
         Self {
             board: Board::from_fen(STARTPOS).expect("startpos FEN should be valid"),
-            movegen: MoveGenerator::new(),
             search: Search::new(),
         }
     }
@@ -63,7 +61,7 @@ impl Engine {
                 return Err(format!("invalid move: {uci_move}"));
             };
 
-            if !self.board.make(m, &self.movegen) {
+            if !self.board.make(m, &self.search.movegen) {
                 return Err(format!("illegal move: {uci_move}"));
             }
         }
@@ -72,7 +70,7 @@ impl Engine {
     }
 
     fn find_legal_move(&self, uci_move: &str) -> Option<Move> {
-        let moves = self.movegen.gen_moves(&self.board);
+        let moves = self.search.movegen.gen_moves(&self.board);
 
         for i in 0..moves.len() {
             let m = moves.get(i);
