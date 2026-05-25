@@ -66,6 +66,23 @@ impl Move {
     pub fn to(&self) -> Square {
         unsafe { std::mem::transmute((self.0 & 0b0000_000000_111111) as u8) }
     }
+
+    pub fn to_uci(&self) -> String {
+        let promotion = match self.kind() {
+            MoveType::NPromotion | MoveType::NPromoCapture => "n",
+            MoveType::BPromotion | MoveType::BPromoCapture => "b",
+            MoveType::RPromotion | MoveType::RPromoCapture => "r",
+            MoveType::QPromotion | MoveType::QPromoCapture => "q",
+            _ => "",
+        };
+
+        format!(
+            "{}{}{}",
+            self.from().to_string().to_ascii_lowercase(),
+            self.to().to_string().to_ascii_lowercase(),
+            promotion
+        )
+    }
 }
 
 impl MoveType {
@@ -104,5 +121,24 @@ impl std::fmt::Display for MoveType {
         };
 
         write!(f, "{}", kind)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_quiet_move_as_uci() {
+        let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+
+        assert_eq!(m.to_uci(), "e2e4");
+    }
+
+    #[test]
+    fn formats_promotion_move_as_uci() {
+        let m = Move::new(Square::E7, Square::E8, MoveType::QPromotion);
+
+        assert_eq!(m.to_uci(), "e7e8q");
     }
 }
