@@ -1,5 +1,5 @@
 use crate::board::castling::{CastlingKind, CastlingPerms};
-use crate::evaluation::piece_value;
+use crate::evaluation::Evaluation;
 use crate::movegen::MoveGenerator;
 use crate::movegen::moves::{Move, MoveType};
 use bitboard::Bitboard;
@@ -40,7 +40,7 @@ impl Board {
                 halfmove_clock: 0,
                 fullmove_number: 1,
                 zobrist_key: 0,
-                material: [0; Color::COUNT],
+                evaluation: Evaluation::default(),
                 next_move: Move(0),
                 captured: Piece::None,
             },
@@ -63,7 +63,7 @@ impl Board {
         self.bitboards[piece.color()][piece.ptype()].set(square);
         self.occupancy[piece.color()].set(square);
         self.mailbox[square] = piece;
-        self.state.material[piece.color()] += piece_value(piece);
+        self.state.evaluation.add_piece(piece);
         self.update_hash(square, piece);
     }
 
@@ -72,7 +72,7 @@ impl Board {
         self.bitboards[piece.color()][piece.ptype()].clear(square);
         self.occupancy[piece.color()].clear(square);
         self.mailbox[square] = Piece::None;
-        self.state.material[piece.color()] -= piece_value(piece);
+        self.state.evaluation.remove_piece(piece);
         self.update_hash(square, piece);
     }
 
@@ -194,7 +194,7 @@ impl Board {
 
     pub fn unmake(&mut self) {
         let captured = self.state.captured; // Captured Piece
-        let material = self.state.material;
+        let evaluation = self.state.evaluation;
 
         if let Some(state) = self.history.pop() {
             self.state = state;
@@ -202,8 +202,8 @@ impl Board {
             return;
         }
 
-        let restored_material = self.state.material;
-        self.state.material = material;
+        let restored_evaluation = self.state.evaluation;
+        self.state.evaluation = evaluation;
 
         // Move to undo
         let m = self.state.next_move;
@@ -226,7 +226,7 @@ impl Board {
             MoveType::CastleQueenside => self.unmake_castle(m, false),
         }
 
-        debug_assert_eq!(self.state.material, restored_material);
+        debug_assert_eq!(self.state.evaluation, restored_evaluation);
     }
 
     pub fn make_quiet(&mut self, m: Move) {

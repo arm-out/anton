@@ -88,8 +88,8 @@ mod tests {
         let board =
             Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
 
-        assert_eq!(Evaluation::count_material(&board), [4000, 4000]);
-        assert_eq!(board.state.material, [4000, 4000]);
+        assert_eq!(Evaluation::count_material(&board), [4250, 4250]);
+        assert_eq!(board.state.evaluation.material(), [4250, 4250]);
     }
 
     #[test]
@@ -99,9 +99,9 @@ mod tests {
         let capture = Move::new(Square::E4, Square::D5, MoveType::Capture);
 
         assert!(board.make(capture, &movegen));
-        assert_eq!(board.state.material, [100, 0]);
+        assert_eq!(board.state.evaluation.material(), [100, 0]);
 
         board.unmake();
-        assert_eq!(board.state.material, [100, 100]);
+        assert_eq!(board.state.evaluation.material(), [100, 100]);
     }
 }

@@ -4,6 +4,7 @@ use crate::{
         piece::{Color, Piece},
         square::Square,
     },
+    evaluation::Evaluation,
     movegen::moves::Move,
 };
 
@@ -15,7 +16,7 @@ pub struct GameState {
     pub halfmove_clock: u8,
     pub fullmove_number: u16,
     pub zobrist_key: u64,
-    pub material: [u16; Color::COUNT],
+    pub evaluation: Evaluation,
     pub captured: Piece,
     pub next_move: Move,
 }
