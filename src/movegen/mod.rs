@@ -18,7 +18,6 @@ mod directions;
 mod magic;
 mod movelist;
 pub mod moves;
-mod perft;
 
 #[derive(Debug)]
 pub struct MoveGenerator {

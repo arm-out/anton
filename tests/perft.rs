@@ -1,90 +1,87 @@
-#[cfg(test)]
-mod tests {
-    use crate::{board::Board, movegen::MoveGenerator};
+use anton::{board::Board, movegen::MoveGenerator};
 
-    fn perft(board: &mut Board, depth: u8, mg: &MoveGenerator) -> u64 {
-        let mut leaf_nodes = 0;
-        if depth == 0 {
-            return 1;
+fn perft(board: &mut Board, depth: u8, mg: &MoveGenerator) -> u64 {
+    let mut leaf_nodes = 0;
+    if depth == 0 {
+        return 1;
+    }
+
+    let ml = mg.gen_moves(board);
+
+    for i in 0..ml.len() {
+        let m = ml.get(i);
+
+        if board.make(m, mg) {
+            leaf_nodes += perft(board, depth - 1, mg);
+            board.unmake();
         }
+    }
 
-        let ml = mg.gen_moves(board);
+    leaf_nodes
+}
 
-        for i in 0..ml.len() {
-            let m = ml.get(i);
+fn run_perft(fen: &str, nodes: &[(u8, u64)]) {
+    let Ok(mut board) = Board::from_fen(fen) else {
+        panic!("Invalid FEN: {fen}");
+    };
+    let mg = MoveGenerator::new();
 
-            // println!("{i}: {m}");
-            if board.make(m, mg) {
-                leaf_nodes += perft(board, depth - 1, mg);
-                board.unmake();
+    for &(depth, expected) in nodes {
+        assert_eq!(
+            perft(&mut board, depth, &mg),
+            expected,
+            "{fen} at depth {depth}"
+        );
+    }
+}
+
+fn run_perftsuite_case(case_number: usize) {
+    let line = include_str!("perftsuite.epd")
+        .lines()
+        .nth(case_number - 1)
+        .unwrap_or_else(|| panic!("Missing perftsuite case {case_number}"));
+    let (fen, nodes) = parse_perftsuite_line(line);
+
+    run_perft(fen, &nodes);
+}
+
+fn parse_perftsuite_line(line: &str) -> (&str, Vec<(u8, u64)>) {
+    let mut parts = line.split(" ;");
+    let fen = parts
+        .next()
+        .unwrap_or_else(|| panic!("Missing FEN in {line}"));
+    let nodes = parts
+        .map(|part| {
+            let (depth, nodes) = part
+                .split_once(' ')
+                .unwrap_or_else(|| panic!("Invalid perft data: {part}"));
+            let depth = depth
+                .strip_prefix('D')
+                .unwrap_or_else(|| panic!("Invalid perft depth: {depth}"))
+                .parse()
+                .unwrap_or_else(|_| panic!("Invalid perft depth: {depth}"));
+            let nodes = nodes
+                .parse()
+                .unwrap_or_else(|_| panic!("Invalid perft nodes: {nodes}"));
+
+            (depth, nodes)
+        })
+        .collect();
+
+    (fen, nodes)
+}
+
+macro_rules! perftsuite_cases {
+    ($($name:ident: $case_number:literal,)*) => {
+        $(
+            #[test]
+            #[ignore]
+            fn $name() {
+                run_perftsuite_case($case_number);
             }
-        }
-
-        leaf_nodes
-    }
-
-    fn run_perft(fen: &str, nodes: &[(u8, u64)]) {
-        let Ok(mut board) = Board::from_fen(fen) else {
-            panic!("Invalid FEN: {fen}");
-        };
-        let mg = MoveGenerator::new();
-
-        for &(depth, expected) in nodes {
-            assert_eq!(
-                perft(&mut board, depth, &mg),
-                expected,
-                "{fen} at depth {depth}"
-            );
-        }
-    }
-
-    fn run_perftsuite_case(case_number: usize) {
-        let line = include_str!("perftsuite.epd")
-            .lines()
-            .nth(case_number - 1)
-            .unwrap_or_else(|| panic!("Missing perftsuite case {case_number}"));
-        let (fen, nodes) = parse_perftsuite_line(line);
-
-        run_perft(fen, &nodes);
-    }
-
-    fn parse_perftsuite_line(line: &str) -> (&str, Vec<(u8, u64)>) {
-        let mut parts = line.split(" ;");
-        let fen = parts
-            .next()
-            .unwrap_or_else(|| panic!("Missing FEN in {line}"));
-        let nodes = parts
-            .map(|part| {
-                let (depth, nodes) = part
-                    .split_once(' ')
-                    .unwrap_or_else(|| panic!("Invalid perft data: {part}"));
-                let depth = depth
-                    .strip_prefix('D')
-                    .unwrap_or_else(|| panic!("Invalid perft depth: {depth}"))
-                    .parse()
-                    .unwrap_or_else(|_| panic!("Invalid perft depth: {depth}"));
-                let nodes = nodes
-                    .parse()
-                    .unwrap_or_else(|_| panic!("Invalid perft nodes: {nodes}"));
-
-                (depth, nodes)
-            })
-            .collect();
-
-        (fen, nodes)
-    }
-
-    macro_rules! perftsuite_cases {
-        ($($name:ident: $case_number:literal,)*) => {
-            $(
-                #[test]
-                #[ignore]
-                fn $name() {
-                    run_perftsuite_case($case_number);
-                }
-            )*
-        };
-    }
+        )*
+    };
+}
 
     perftsuite_cases! {
         perft_1: 1,
@@ -216,4 +213,3 @@ mod tests {
         perft_127: 127,
         perft_128: 128,
     }
-}
