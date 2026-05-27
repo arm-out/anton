@@ -1,5 +1,7 @@
 use std::ops::{Add, Index, IndexMut, Sub};
 
+use super::piece::Color;
+
 #[rustfmt::skip]
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -37,6 +39,15 @@ impl Square {
 
     pub fn from_idx(idx: usize) -> Self {
         unsafe { std::mem::transmute(idx as u8) }
+    }
+
+    pub fn psqt_idx(self, color: Color) -> usize {
+        let idx = self as usize;
+
+        match color {
+            Color::White => idx ^ 56,
+            Color::Black => idx ^ 7,
+        }
     }
 
     pub fn try_offset(self, df: i8, dr: i8) -> Option<Self> {
@@ -200,6 +211,25 @@ mod tests {
         assert_eq!(square as u8, 19 as u8);
         let square = Square::new(Square::F6 as u8);
         assert_eq!(square as u8, 45 as u8);
+    }
+
+    #[test]
+    fn test_psqt_idx() {
+        assert_eq!(Square::A8.psqt_idx(Color::White), 0);
+        assert_eq!(Square::H8.psqt_idx(Color::White), 7);
+        assert_eq!(Square::A7.psqt_idx(Color::White), 8);
+        assert_eq!(Square::A2.psqt_idx(Color::White), 48);
+        assert_eq!(Square::A1.psqt_idx(Color::White), 56);
+        assert_eq!(Square::H1.psqt_idx(Color::White), 63);
+        assert_eq!(Square::E4.psqt_idx(Color::White), 36);
+
+        assert_eq!(Square::A8.psqt_idx(Color::Black), 63);
+        assert_eq!(Square::H8.psqt_idx(Color::Black), 56);
+        assert_eq!(Square::A7.psqt_idx(Color::Black), 55);
+        assert_eq!(Square::A2.psqt_idx(Color::Black), 15);
+        assert_eq!(Square::A1.psqt_idx(Color::Black), 7);
+        assert_eq!(Square::H1.psqt_idx(Color::Black), 0);
+        assert_eq!(Square::E5.psqt_idx(Color::Black), 35);
     }
 
     #[test]
