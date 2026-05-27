@@ -14,15 +14,6 @@ impl Search {
     ) -> SearchResult {
         context.root();
 
-        if board.is_repetition() {
-            context.leaf();
-
-            return SearchResult {
-                best_move: None,
-                score: DRAW_SCORE,
-            };
-        }
-
         if depth == 0 {
             context.leaf();
 
@@ -39,7 +30,7 @@ impl Search {
         let moves = self.movegen.gen_moves(board);
 
         for i in 0..moves.len() {
-            if context.should_stop() {
+            if best_move.is_some() && context.should_stop() {
                 break;
             }
 

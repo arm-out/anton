@@ -119,7 +119,7 @@ impl Search {
         let mut best_result = None;
 
         for depth in 1..=max_depth {
-            if timer.should_stop() {
+            if depth > 1 && timer.should_stop() {
                 break;
             }
 
@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_position_scores_as_draw() {
+    fn repeated_root_position_still_returns_a_move() {
         let mut board = Board::from_fen("4k3/8/8/8/8/8/8/4K1N1 w - - 0 1").unwrap();
         let search = Search::new();
 
@@ -316,8 +316,20 @@ mod tests {
             search.apply_uci_move(&mut board, uci_move).unwrap();
         }
 
+        let result = search.search_default(&mut board);
+
+        assert!(result.best_move.is_some());
+    }
+
+    #[test]
+    fn returns_move_in_book_repetition_position() {
+        let mut board =
+            Board::from_fen("r1bqk1nr/pp1pppbp/2n3p1/2p5/4P3/N5PN/PPPP1PBP/R1BQ1RK1 w - - 18 13")
+                .unwrap();
+        let search = Search::new();
+
         let result = search.search_depth(&mut board, 1);
 
-        assert_eq!(result.score, -10);
+        assert!(result.best_move.is_some());
     }
 }
