@@ -1,5 +1,5 @@
 use crate::board::castling::{CastlingKind, CastlingPerms};
-use crate::evaluation::Evaluation;
+use crate::evaluation::{Evaluation, phase_value};
 use crate::movegen::MoveGenerator;
 use crate::movegen::moves::{Move, MoveType};
 use bitboard::Bitboard;
@@ -42,6 +42,7 @@ impl Board {
                 fullmove_number: 1,
                 zobrist_key: 0,
                 evaluation: Evaluation::default(),
+                game_phase: 0,
                 next_move: Move(0),
                 captured: Piece::None,
             },
@@ -64,7 +65,8 @@ impl Board {
         self.bitboards[piece.color()][piece.ptype()].set(square);
         self.occupancy[piece.color()].set(square);
         self.mailbox[square] = piece;
-        self.state.evaluation.add_piece(piece);
+        self.state.evaluation.add_piece(square, piece);
+        self.state.game_phase += phase_value(piece);
         self.update_hash(square, piece);
     }
 
@@ -73,7 +75,8 @@ impl Board {
         self.bitboards[piece.color()][piece.ptype()].clear(square);
         self.occupancy[piece.color()].clear(square);
         self.mailbox[square] = Piece::None;
-        self.state.evaluation.remove_piece(piece);
+        self.state.evaluation.remove_piece(square, piece);
+        self.state.game_phase -= phase_value(piece);
         self.update_hash(square, piece);
     }
 
@@ -209,6 +212,7 @@ impl Board {
     pub fn unmake(&mut self) {
         let captured = self.state.captured; // Captured Piece
         let evaluation = self.state.evaluation;
+        let game_phase = self.state.game_phase;
 
         if let Some(state) = self.history.pop() {
             self.state = state;
@@ -217,7 +221,9 @@ impl Board {
         }
 
         let restored_evaluation = self.state.evaluation;
+        let restored_game_phase = self.state.game_phase;
         self.state.evaluation = evaluation;
+        self.state.game_phase = game_phase;
 
         // Move to undo
         let m = self.state.next_move;
@@ -241,6 +247,7 @@ impl Board {
         }
 
         debug_assert_eq!(self.state.evaluation, restored_evaluation);
+        debug_assert_eq!(self.state.game_phase, restored_game_phase);
     }
 
     pub fn make_quiet(&mut self, m: Move) {

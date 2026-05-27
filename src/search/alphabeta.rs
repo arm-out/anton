@@ -19,7 +19,7 @@ impl Search {
 
             return SearchResult {
                 best_move: None,
-                score: board.state.evaluation.score(board.us()),
+                score: board.state.evaluation.score(board.us(), board.state.game_phase),
             };
         }
 
@@ -75,11 +75,11 @@ impl Search {
 
         if depth == 0 {
             context.leaf();
-            return board.state.evaluation.score(board.us());
+            return board.state.evaluation.score(board.us(), board.state.game_phase);
         }
 
         if context.should_stop() {
-            return board.state.evaluation.score(board.us());
+            return board.state.evaluation.score(board.us(), board.state.game_phase);
         }
 
         let mut best_score = -INF;
