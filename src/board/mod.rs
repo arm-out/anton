@@ -133,6 +133,49 @@ impl Board {
             .any(|state| state.zobrist_key == current_key)
     }
 
+    pub fn has_bishop_pair(&self, color: Color) -> bool {
+        let bishops = self.get_piece(PieceType::Bishop, color);
+
+        let mut white = 0;
+        let mut black = 0;
+
+        if bishops.count_ones() >= 2 {
+            for square in bishops {
+                match square.color() {
+                    Color::White => white += 1,
+                    Color::Black => black += 1,
+                }
+            }
+        }
+
+        (white >= 1) && (black >= 1)
+    }
+
+    pub fn can_force_checkmate(&self) -> bool {
+        let white = self.bitboards[Color::White];
+        let black = self.bitboards[Color::Black];
+
+        // Minimum material for checkmate
+        white[PieceType::Queen] > Bitboard(0)   // King + 1 Major Piece
+            || white[PieceType::Rook] > Bitboard(0)   // King + 1 Major Piece
+            || black[PieceType::Queen] > Bitboard(0)   // King + 1 Major Piece
+            || black[PieceType::Rook] > Bitboard(0)   // King + 1 Major Piece
+            || (white[PieceType::Bishop] > Bitboard(0) && white[PieceType::Knight] > Bitboard(0))   // Bishop + Knight
+            || (black[PieceType::Bishop] > Bitboard(0) && black[PieceType::Knight] > Bitboard(0))   // Bishop + Knight
+            || white[PieceType::Pawn] > Bitboard(0)   // King + 1 Major Piece (Promo)
+            || black[PieceType::Pawn] > Bitboard(0)   // King + 1 Major Piece (Promo)
+            || self.has_bishop_pair(Color::White)   // Bishop Pair
+            || self.has_bishop_pair(Color::Black) // Bishop Pair
+    }
+
+    pub fn draw_by_fifty_rule(&self) -> bool {
+        self.state.halfmove_clock >= 100
+    }
+
+    pub fn is_draw(&self) -> bool {
+        (!self.can_force_checkmate()) || self.is_repetition() || self.draw_by_fifty_rule()
+    }
+
     // Make Move
     // 1. Push current state to history
     // 2. Update State and Board

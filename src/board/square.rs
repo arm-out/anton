@@ -50,6 +50,14 @@ impl Square {
         }
     }
 
+    pub fn color(&self) -> Color {
+        if ((*self as u8) + ((*self as u8) >> 3)) & 1 == 0 {
+            Color::Black
+        } else {
+            Color::White
+        }
+    }
+
     pub fn try_offset(self, df: i8, dr: i8) -> Option<Self> {
         let f = self.file() as i8 + df;
         let r = self.rank() as i8 + dr;
@@ -230,6 +238,16 @@ mod tests {
         assert_eq!(Square::A1.psqt_idx(Color::Black), 7);
         assert_eq!(Square::H1.psqt_idx(Color::Black), 0);
         assert_eq!(Square::E5.psqt_idx(Color::Black), 35);
+    }
+
+    #[test]
+    fn test_square_color() {
+        assert_eq!(Square::A1.color(), Color::Black);
+        assert_eq!(Square::B1.color(), Color::White);
+        assert_eq!(Square::A2.color(), Color::White);
+        assert_eq!(Square::H8.color(), Color::Black);
+        assert_eq!(Square::E4.color(), Color::White);
+        assert_eq!(Square::D4.color(), Color::Black);
     }
 
     #[test]

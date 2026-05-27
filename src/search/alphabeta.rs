@@ -81,7 +81,7 @@ impl Search {
     ) -> Score {
         context.node();
 
-        if board.is_repetition() {
+        if board.is_draw() {
             context.leaf();
             return DRAW_SCORE;
         }

@@ -5,7 +5,7 @@ use crate::board::{
     square::{File, Rank, Square},
 };
 
-#[derive(Default, Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Default, Copy, Clone, PartialEq, Eq, PartialOrd, Debug)]
 #[repr(transparent)] // Guarantees that the layout of the struct is the same as the underlying type
 pub struct Bitboard(pub u64);
 
