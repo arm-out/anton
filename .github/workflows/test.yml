@@ -1,0 +1,36 @@
+name: test
+
+on:
+    push:
+    pull_request:
+        branches:
+            - master
+
+jobs:
+    unit-tests:
+        name: Unit tests
+        if: github.event_name == 'push'
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Run unit tests
+              run: cargo test --lib --bins --locked
+
+    perft:
+        name: Perft testsuite
+        if: github.event_name == 'pull_request'
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Run perft testsuite
+              run: cargo test --test perft --locked -- --ignored

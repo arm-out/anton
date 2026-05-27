@@ -1,0 +1,105 @@
+name: Release
+
+on:
+    pull_request:
+        branches:
+            - master
+        types:
+            - closed
+
+permissions:
+    contents: write
+
+jobs:
+    build:
+        name: Build ${{ matrix.name }}
+        if: github.event.pull_request.merged == true
+        runs-on: ${{ matrix.os }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - name: linux-x86_64
+                      os: ubuntu-latest
+                      binary: anton
+                      archive: anton-linux-x86_64.tar.gz
+                    - name: macos-arm64
+                      os: macos-latest
+                      binary: anton
+                      archive: anton-macos.tar.gz
+                    - name: windows-x86_64
+                      os: windows-latest
+                      binary: anton.exe
+                      archive: anton-windows-x86_64.zip
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Build
+              run: cargo build --release --locked
+
+            - name: Package Unix build
+              if: runner.os != 'Windows'
+              run: |
+                  mkdir -p dist
+                  cp "target/release/${{ matrix.binary }}" "dist/${{ matrix.binary }}"
+                  tar -czf "${{ matrix.archive }}" -C dist "${{ matrix.binary }}"
+
+            - name: Package Windows build
+              if: runner.os == 'Windows'
+              shell: pwsh
+              run: |
+                  New-Item -ItemType Directory -Force -Path dist
+                  Copy-Item "target/release/${{ matrix.binary }}" "dist/${{ matrix.binary }}"
+                  Compress-Archive -Path "dist/${{ matrix.binary }}" -DestinationPath "${{ matrix.archive }}"
+
+            - name: Upload package
+              uses: actions/upload-artifact@v4
+              with:
+                  name: ${{ matrix.archive }}
+                  path: ${{ matrix.archive }}
+                  if-no-files-found: error
+
+    release:
+        name: Create release
+        if: github.event.pull_request.merged == true
+        needs: build
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.pull_request.merge_commit_sha }}
+
+            - name: Download packages
+              uses: actions/download-artifact@v4
+              with:
+                  path: dist
+                  merge-multiple: true
+
+            - name: Prepare release metadata
+              id: metadata
+              shell: bash
+              run: |
+                  version="$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "anton") | .version')"
+                  echo "tag=v${version}" >> "$GITHUB_OUTPUT"
+
+            - name: Write release notes
+              env:
+                  PR_BODY: ${{ github.event.pull_request.body }}
+              shell: bash
+              run: |
+                  printf '%s\n' "$PR_BODY" > release-notes.md
+
+            - name: Create GitHub release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ steps.metadata.outputs.tag }}
+                  target_commitish: ${{ github.event.pull_request.merge_commit_sha }}
+                  name: ${{ steps.metadata.outputs.tag }}
+                  body_path: release-notes.md
+                  files: dist/*
