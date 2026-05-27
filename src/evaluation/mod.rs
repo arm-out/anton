@@ -166,4 +166,50 @@ mod tests {
         assert_eq!(board.state.evaluation, Evaluation::new(&board));
         assert_eq!(board.state.game_phase, 0);
     }
+
+    #[test]
+    fn tracks_evaluation_through_castling_and_unmake() {
+        let movegen = MoveGenerator::new();
+
+        for (fen, from, to, kind) in [
+            (
+                "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+                Square::E1,
+                Square::G1,
+                MoveType::CastleKingside,
+            ),
+            (
+                "r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1",
+                Square::E1,
+                Square::C1,
+                MoveType::CastleQueenside,
+            ),
+            (
+                "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1",
+                Square::E8,
+                Square::G8,
+                MoveType::CastleKingside,
+            ),
+            (
+                "r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1",
+                Square::E8,
+                Square::C8,
+                MoveType::CastleQueenside,
+            ),
+        ] {
+            let mut board = Board::from_fen(fen).unwrap();
+            let initial_evaluation = board.state.evaluation;
+            let initial_phase = board.state.game_phase;
+            let castle = Move::new(from, to, kind);
+
+            assert!(board.make(castle, &movegen));
+            assert_eq!(board.state.evaluation, Evaluation::new(&board));
+            assert_eq!(board.state.game_phase, initial_phase);
+
+            board.unmake();
+            assert_eq!(board.state.evaluation, initial_evaluation);
+            assert_eq!(board.state.evaluation, Evaluation::new(&board));
+            assert_eq!(board.state.game_phase, initial_phase);
+        }
+    }
 }
