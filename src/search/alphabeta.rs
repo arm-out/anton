@@ -3,7 +3,7 @@ use crate::evaluation::Score;
 use super::{Search, SearchContext, SearchObserver, SearchResult};
 
 const INF: Score = Score::MAX;
-const DRAW_SCORE: Score = -10;
+const DRAW_SCORE: Score = 0;
 
 impl Search {
     pub(super) fn search_depth_inner<O: SearchObserver>(
@@ -19,7 +19,10 @@ impl Search {
 
             return SearchResult {
                 best_move: None,
-                score: board.state.evaluation.score(board.us(), board.state.game_phase),
+                score: board
+                    .state
+                    .evaluation
+                    .score(board.us(), board.state.game_phase),
             };
         }
 
@@ -75,11 +78,17 @@ impl Search {
 
         if depth == 0 {
             context.leaf();
-            return board.state.evaluation.score(board.us(), board.state.game_phase);
+            return board
+                .state
+                .evaluation
+                .score(board.us(), board.state.game_phase);
         }
 
         if context.should_stop() {
-            return board.state.evaluation.score(board.us(), board.state.game_phase);
+            return board
+                .state
+                .evaluation
+                .score(board.us(), board.state.game_phase);
         }
 
         let mut best_score = -INF;
