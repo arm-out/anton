@@ -2,9 +2,10 @@
 
 ## Strength
 
-| version | feature | self-play |                                                  estimated elo                                                  | CCRL |
-| ------- | ------- | :-------: | :-------------------------------------------------------------------------------------------------------------: | :--: |
-| 0.1.0   | base    |     -     | [767](https://github.com/arm-out/anton/commit/f0c5f7f98263cd1a5235eee045c5812e6a44269e#commitcomment-186661529) |      |
+| version | feature                                                   | selfplay<br>[20+0.2] |                                            estimated elo<br>[20+0.2]                                            | CCRL<br>40/15 |
+| :-----: | --------------------------------------------------------- | :------------------: | :-------------------------------------------------------------------------------------------------------------: | :-----------: |
+|  0.2.0  | iterative deepening, time control, move ordering, MVV-LVA |        +36.9         |                                                      []()                                                       |               |
+|  0.1.0  | base                                                      |          -           | [767](https://github.com/arm-out/anton/commit/f0c5f7f98263cd1a5235eee045c5812e6a44269e#commitcomment-186661529) |               |
 
 ## Features
 
