@@ -4,7 +4,7 @@ use crate::{
     movegen::{MoveGenerator, moves::Move},
 };
 
-const SEARCH_DEPTH: u8 = 2;
+const SEARCH_DEPTH: u8 = 3;
 const INF: Score = Score::MAX;
 
 #[derive(Debug, Default, PartialEq)]
