@@ -1,12 +1,7 @@
 use crate::movegen::moves::Move;
 
 pub const fn id_name() -> &'static str {
-    concat!(
-        "id name ",
-        env!("CARGO_PKG_NAME"),
-        " ",
-        env!("CARGO_PKG_VERSION")
-    )
+    concat!("id name Anton v", env!("CARGO_PKG_VERSION"))
 }
 
 pub const fn id_author() -> &'static str {
