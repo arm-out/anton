@@ -15,17 +15,20 @@
 ### Search
 
 - NegaMax
-
 - Iterative Deepening
+- Move Ordering
 
 ### Evaluation
 
 ### Time management
 
+- Hard time limits
+- Node time management
+
 ### Miscellaneous
 
 - Magic Bitboards
-
 - Zobrist hashing
+- MVV-LVA Heuristic
 
 </details>
