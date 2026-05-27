@@ -50,6 +50,39 @@ struct NoStats;
 
 impl SearchObserver for NoStats {}
 
+struct SearchContext<'a, O: SearchObserver> {
+    observer: &'a mut O,
+    timer: Option<&'a mut TimeManager>,
+}
+
+impl<'a, O: SearchObserver> SearchContext<'a, O> {
+    fn new(observer: &'a mut O, timer: Option<&'a mut TimeManager>) -> Self {
+        Self { observer, timer }
+    }
+
+    fn root(&mut self) {
+        self.observer.root();
+    }
+
+    fn node(&mut self) {
+        self.observer.node();
+    }
+
+    fn leaf(&mut self) {
+        self.observer.leaf();
+    }
+
+    fn beta_cutoff(&mut self) {
+        self.observer.beta_cutoff();
+    }
+
+    fn should_stop(&mut self) -> bool {
+        self.timer
+            .as_deref_mut()
+            .is_some_and(TimeManager::should_stop)
+    }
+}
+
 #[cfg(feature = "search-stats")]
 impl SearchObserver for SearchStats {
     fn root(&mut self) {
@@ -81,7 +114,7 @@ impl Search {
     }
 
     pub fn search(&self, board: &mut Board, limit: SearchLimit) -> SearchResult {
-        let timer = TimeManager::new(limit);
+        let mut timer = TimeManager::new(limit);
         let max_depth = timer.max_depth();
         let mut best_result = None;
 
@@ -90,7 +123,7 @@ impl Search {
                 break;
             }
 
-            let (result, completed) = self.search_depth_timed(board, depth, &timer);
+            let (result, completed) = self.search_depth_timed(board, depth, &mut timer);
 
             if completed || best_result.is_none() {
                 best_result = Some(result);
@@ -110,8 +143,9 @@ impl Search {
 
     pub fn search_depth(&self, board: &mut Board, depth: u8) -> SearchResult {
         let mut observer = NoStats;
+        let mut context = SearchContext::new(&mut observer, None);
 
-        self.search_depth_inner(board, depth, &mut observer, None)
+        self.search_depth_inner(board, depth, &mut context)
     }
 
     #[cfg(feature = "search-stats")]
@@ -121,7 +155,8 @@ impl Search {
         depth: u8,
     ) -> (SearchResult, SearchStats) {
         let mut stats = SearchStats::default();
-        let result = self.search_depth_inner(board, depth, &mut stats, None);
+        let mut context = SearchContext::new(&mut stats, None);
+        let result = self.search_depth_inner(board, depth, &mut context);
 
         (result, stats)
     }
@@ -130,12 +165,18 @@ impl Search {
         &self,
         board: &mut Board,
         depth: u8,
-        timer: &TimeManager,
+        timer: &mut TimeManager,
     ) -> (SearchResult, bool) {
         let mut observer = NoStats;
-        let result = self.search_depth_inner(board, depth, &mut observer, Some(timer));
+        let mut context = SearchContext::new(&mut observer, Some(timer));
+        let result = self.search_depth_inner(board, depth, &mut context);
 
-        (result, !timer.should_stop())
+        let completed = context
+            .timer
+            .as_deref()
+            .is_none_or(|timer| !timer.has_stopped());
+
+        (result, completed)
     }
 
     pub fn apply_uci_move(&self, board: &mut Board, uci_move: &str) -> Result<(), String> {

@@ -1,6 +1,6 @@
 use crate::evaluation::Score;
 
-use super::{Search, SearchObserver, SearchResult, TimeManager};
+use super::{Search, SearchContext, SearchObserver, SearchResult};
 
 const INF: Score = Score::MAX;
 
@@ -9,13 +9,12 @@ impl Search {
         &self,
         board: &mut crate::board::Board,
         depth: u8,
-        observer: &mut O,
-        timer: Option<&TimeManager>,
+        context: &mut SearchContext<O>,
     ) -> SearchResult {
-        observer.root();
+        context.root();
 
         if depth == 0 {
-            observer.leaf();
+            context.leaf();
 
             return SearchResult {
                 best_move: None,
@@ -30,7 +29,7 @@ impl Search {
         let moves = self.movegen.gen_moves(board);
 
         for i in 0..moves.len() {
-            if timer.is_some_and(TimeManager::should_stop) {
+            if context.should_stop() {
                 break;
             }
 
@@ -40,7 +39,7 @@ impl Search {
                 continue;
             }
 
-            let score = -self.negamax(board, depth - 1, -beta, -alpha, observer, timer);
+            let score = -self.negamax(board, depth - 1, -beta, -alpha, context);
             board.unmake();
 
             if best_move.is_none() || score > best_score {
@@ -63,17 +62,16 @@ impl Search {
         depth: u8,
         mut alpha: Score,
         beta: Score,
-        observer: &mut O,
-        timer: Option<&TimeManager>,
+        context: &mut SearchContext<O>,
     ) -> Score {
-        observer.node();
+        context.node();
 
         if depth == 0 {
-            observer.leaf();
+            context.leaf();
             return board.state.evaluation.score(board.us());
         }
 
-        if timer.is_some_and(TimeManager::should_stop) {
+        if context.should_stop() {
             return board.state.evaluation.score(board.us());
         }
 
@@ -81,7 +79,7 @@ impl Search {
         let moves = self.movegen.gen_moves(board);
 
         for i in 0..moves.len() {
-            if timer.is_some_and(TimeManager::should_stop) {
+            if context.should_stop() {
                 break;
             }
 
@@ -91,14 +89,14 @@ impl Search {
                 continue;
             }
 
-            let score = -self.negamax(board, depth - 1, -beta, -alpha, observer, timer);
+            let score = -self.negamax(board, depth - 1, -beta, -alpha, context);
             board.unmake();
 
             best_score = best_score.max(score);
             alpha = alpha.max(score);
 
             if alpha >= beta {
-                observer.beta_cutoff();
+                context.beta_cutoff();
                 break;
             }
         }
