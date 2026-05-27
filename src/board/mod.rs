@@ -117,6 +117,19 @@ impl Board {
         self.mailbox[square]
     }
 
+    pub fn is_repetition(&self) -> bool {
+        let current_key = self.state.zobrist_key;
+        let reversible_plies = self.state.halfmove_clock as usize;
+
+        self.history
+            .iter()
+            .rev()
+            .take(reversible_plies)
+            .skip(1)
+            .step_by(2)
+            .any(|state| state.zobrist_key == current_key)
+    }
+
     // Make Move
     // 1. Push current state to history
     // 2. Update State and Board
@@ -452,5 +465,40 @@ impl Board {
             self.state.zobrist_key ^= self.zobrist.en_passant[self.state.en_passant]; // En passant
         }
         self.state.zobrist_key ^= self.zobrist.side_to_move[self.state.active_side]; // Side to move
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_uci_move(board: &mut Board, movegen: &MoveGenerator, uci_move: &str) {
+        let moves = movegen.gen_moves(board);
+
+        for i in 0..moves.len() {
+            let m = moves.get(i);
+
+            if m.to_uci() == uci_move {
+                assert!(board.make(m, movegen));
+                return;
+            }
+        }
+
+        panic!("legal move not found: {uci_move}");
+    }
+
+    #[test]
+    fn detects_repetition_from_zobrist_history() {
+        let mut board = Board::from_fen("4k3/8/8/8/8/8/8/4K1N1 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+
+        assert!(!board.is_repetition());
+
+        make_uci_move(&mut board, &movegen, "g1f3");
+        make_uci_move(&mut board, &movegen, "e8d8");
+        make_uci_move(&mut board, &movegen, "f3g1");
+        make_uci_move(&mut board, &movegen, "d8e8");
+
+        assert!(board.is_repetition());
     }
 }
