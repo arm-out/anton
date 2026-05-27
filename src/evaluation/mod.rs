@@ -134,6 +134,29 @@ mod tests {
     }
 
     #[test]
+    fn evaluation_scores_material_advantage() {
+        let white_queen =
+            Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let black_queen =
+            Board::from_fen("4kq2/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+
+        assert!(
+            white_queen
+                .state
+                .evaluation
+                .score(Color::White, white_queen.state.game_phase)
+                > 900
+        );
+        assert!(
+            black_queen
+                .state
+                .evaluation
+                .score(Color::White, black_queen.state.game_phase)
+                < -900
+        );
+    }
+
+    #[test]
     fn tracks_evaluation_through_make_and_unmake() {
         let mut board = Board::from_fen("8/8/8/3n4/4B3/8/8/4K2k w - - 0 1").unwrap();
         let initial_evaluation = board.state.evaluation;

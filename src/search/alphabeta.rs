@@ -1,8 +1,12 @@
-use crate::evaluation::Score;
+use crate::{
+    board::{Board, piece::PieceType, square::Square},
+    evaluation::Score,
+};
 
 use super::{Search, SearchContext, SearchObserver, SearchResult};
 
 const INF: Score = Score::MAX;
+const MATE_SCORE: Score = 30_000;
 const DRAW_SCORE: Score = 0;
 
 impl Search {
@@ -32,6 +36,7 @@ impl Search {
         let beta = INF;
         let mut moves = self.movegen.gen_moves(board);
         moves.score_moves(board);
+        let mut legal_moves = 0;
 
         for i in 0..moves.len() {
             if best_move.is_some() && context.should_stop() {
@@ -44,6 +49,7 @@ impl Search {
                 continue;
             }
 
+            legal_moves += 1;
             let score = -self.negamax(board, depth - 1, -beta, -alpha, context);
             board.unmake();
 
@@ -53,6 +59,10 @@ impl Search {
             }
 
             alpha = alpha.max(score);
+        }
+
+        if legal_moves == 0 {
+            best_score = self.terminal_score(board);
         }
 
         SearchResult {
@@ -94,6 +104,7 @@ impl Search {
         let mut best_score = -INF;
         let mut moves = self.movegen.gen_moves(board);
         moves.score_moves(board);
+        let mut legal_moves = 0;
 
         for i in 0..moves.len() {
             if context.should_stop() {
@@ -106,6 +117,7 @@ impl Search {
                 continue;
             }
 
+            legal_moves += 1;
             let score = -self.negamax(board, depth - 1, -beta, -alpha, context);
             board.unmake();
 
@@ -118,6 +130,22 @@ impl Search {
             }
         }
 
+        if legal_moves == 0 {
+            context.leaf();
+            return self.terminal_score(board);
+        }
+
         best_score
+    }
+
+    fn terminal_score(&self, board: &Board) -> Score {
+        let king = board.bitboards[board.us()][PieceType::King];
+        let king_square = Square::from_idx(king.0.trailing_zeros() as usize);
+
+        if self.movegen.is_attacked(board, king_square, board.them()) {
+            -MATE_SCORE
+        } else {
+            DRAW_SCORE
+        }
     }
 }
