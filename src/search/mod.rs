@@ -306,4 +306,18 @@ mod tests {
         assert_eq!(board.history.len(), 0);
         assert!(result.best_move.is_some() || result == SearchResult::default());
     }
+
+    #[test]
+    fn repeated_position_scores_as_draw() {
+        let mut board = Board::from_fen("4k3/8/8/8/8/8/8/4K1N1 w - - 0 1").unwrap();
+        let search = Search::new();
+
+        for uci_move in ["g1f3", "e8d8", "f3g1", "d8e8"] {
+            search.apply_uci_move(&mut board, uci_move).unwrap();
+        }
+
+        let result = search.search_depth(&mut board, 1);
+
+        assert_eq!(result.score, -10);
+    }
 }

@@ -3,6 +3,7 @@ use crate::evaluation::Score;
 use super::{Search, SearchContext, SearchObserver, SearchResult};
 
 const INF: Score = Score::MAX;
+const DRAW_SCORE: Score = -10;
 
 impl Search {
     pub(super) fn search_depth_inner<O: SearchObserver>(
@@ -12,6 +13,15 @@ impl Search {
         context: &mut SearchContext<O>,
     ) -> SearchResult {
         context.root();
+
+        if board.is_repetition() {
+            context.leaf();
+
+            return SearchResult {
+                best_move: None,
+                score: DRAW_SCORE,
+            };
+        }
 
         if depth == 0 {
             context.leaf();
@@ -65,6 +75,11 @@ impl Search {
         context: &mut SearchContext<O>,
     ) -> Score {
         context.node();
+
+        if board.is_repetition() {
+            context.leaf();
+            return DRAW_SCORE;
+        }
 
         if depth == 0 {
             context.leaf();
