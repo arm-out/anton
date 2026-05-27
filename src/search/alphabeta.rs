@@ -27,14 +27,15 @@ impl Search {
         let mut best_score = -INF;
         let mut alpha = -INF;
         let beta = INF;
-        let moves = self.movegen.gen_moves(board);
+        let mut moves = self.movegen.gen_moves(board);
+        moves.score_moves(board);
 
         for i in 0..moves.len() {
             if best_move.is_some() && context.should_stop() {
                 break;
             }
 
-            let m = moves.get(i);
+            let m = moves.pick_next(i);
 
             if !board.make(m, &self.movegen) {
                 continue;
@@ -82,14 +83,15 @@ impl Search {
         }
 
         let mut best_score = -INF;
-        let moves = self.movegen.gen_moves(board);
+        let mut moves = self.movegen.gen_moves(board);
+        moves.score_moves(board);
 
         for i in 0..moves.len() {
             if context.should_stop() {
                 break;
             }
 
-            let m = moves.get(i);
+            let m = moves.pick_next(i);
 
             if !board.make(m, &self.movegen) {
                 continue;
