@@ -4,7 +4,7 @@ use crate::{
     movegen::{MoveGenerator, moves::Move},
 };
 
-const SEARCH_DEPTH: u8 = 3;
+const SEARCH_DEPTH: u8 = 5;
 const INF: Score = Score::MAX;
 
 #[derive(Debug, Default, PartialEq)]
@@ -117,7 +117,7 @@ impl Search {
             let score = -self.negamax(board, depth - 1, -beta, -alpha, observer);
             board.unmake();
 
-            if score > best_score {
+            if best_move.is_none() || score > best_score {
                 best_score = score;
                 best_move = Some(m);
             }
@@ -238,16 +238,17 @@ mod tests {
         let mut board =
             Board::from_fen("kr3b1r/p5pp/p1Qp4/3P4/1P6/P1R5/2P2PPP/2K1R3 b - - 2 23").unwrap();
         let search = Search::new();
-        let moves = search.movegen.gen_moves(&board);
-        eprintln!("pseudo moves: {}", moves.len());
-        for i in 0..moves.len() {
-            let m = moves.get(i);
-            let legal = board.make(m, &search.movegen);
-            eprintln!("{} legal={}", m.to_uci(), legal);
-            if legal {
-                board.unmake();
-            }
-        }
+
+        let result = search.search(&mut board);
+
+        assert_eq!(result.best_move.unwrap().to_uci(), "b8b7");
+    }
+
+    #[test]
+    fn finds_move_when_only_terrible_moves_are_available() {
+        let mut board =
+            Board::from_fen("2R5/7p/1p2pQp1/8/5k2/P7/1P3PPP/4K2R b K - 2 41").unwrap();
+        let search = Search::new();
 
         let result = search.search(&mut board);
 
