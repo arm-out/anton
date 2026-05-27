@@ -135,10 +135,8 @@ mod tests {
 
     #[test]
     fn evaluation_scores_material_advantage() {
-        let white_queen =
-            Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
-        let black_queen =
-            Board::from_fen("4kq2/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let white_queen = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let black_queen = Board::from_fen("4kq2/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
 
         assert!(
             white_queen
