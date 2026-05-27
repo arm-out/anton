@@ -232,4 +232,25 @@ mod tests {
         assert_eq!(best_move.from(), Square::E4);
         assert_eq!(best_move.to(), Square::E5);
     }
+
+    #[test]
+    fn finds_move_in_exposed_black_king_position() {
+        let mut board =
+            Board::from_fen("kr3b1r/p5pp/p1Qp4/3P4/1P6/P1R5/2P2PPP/2K1R3 b - - 2 23").unwrap();
+        let search = Search::new();
+        let moves = search.movegen.gen_moves(&board);
+        eprintln!("pseudo moves: {}", moves.len());
+        for i in 0..moves.len() {
+            let m = moves.get(i);
+            let legal = board.make(m, &search.movegen);
+            eprintln!("{} legal={}", m.to_uci(), legal);
+            if legal {
+                board.unmake();
+            }
+        }
+
+        let result = search.search(&mut board);
+
+        assert!(result.best_move.is_some());
+    }
 }
