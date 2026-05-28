@@ -1,4 +1,7 @@
-use anton::{board::Board, search::Search};
+use anton::{
+    board::Board,
+    search::{DEFAULT_TT_SIZE_MB, Search},
+};
 
 struct SearchStatsCase {
     name: &'static str,
@@ -43,7 +46,7 @@ const CASES: &[SearchStatsCase] = &[
 #[test]
 #[ignore]
 fn print_search_stats() {
-    let search = Search::new();
+    let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
     println!(
         "{:<18} {:>5} {:>12} {:>12} {:>12} {:>12} {:>12} {:>10} {:>10} {:>10}",

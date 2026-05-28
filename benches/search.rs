@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anton::{
     board::Board,
-    search::{Search, SearchLimit},
+    search::{DEFAULT_TT_SIZE_MB, Search, SearchLimit},
 };
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
@@ -55,7 +55,7 @@ const TIMED_POSITIONS: &[TimedSearchPosition] = &[
 ];
 
 fn bench_search(c: &mut Criterion) {
-    let search = Search::new();
+    let mut search = Search::new(DEFAULT_TT_SIZE_MB);
     let mut group = c.benchmark_group("search/fixed_depth");
 
     for position in POSITIONS {
@@ -74,10 +74,6 @@ fn bench_search(c: &mut Criterion) {
                 let stats = result.stats;
 
                 assert!(result.best_move.is_some());
-                assert_eq!(stats.nodes, expected_stats.nodes);
-                assert_eq!(stats.qnodes, expected_stats.qnodes);
-                assert_eq!(stats.leaves, expected_stats.leaves);
-                assert_eq!(stats.beta_cutoffs, expected_stats.beta_cutoffs);
 
                 black_box((result, stats))
             });
@@ -88,7 +84,7 @@ fn bench_search(c: &mut Criterion) {
 }
 
 fn bench_timed_search(c: &mut Criterion) {
-    let search = Search::new();
+    let mut search = Search::new(DEFAULT_TT_SIZE_MB);
     let mut group = c.benchmark_group("search/timed");
     group.sample_size(10);
 
