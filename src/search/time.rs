@@ -4,70 +4,30 @@ use super::{SearchLimit, infinite_depth};
 
 const CLOCK_SAFETY_MARGIN: Duration = Duration::from_millis(50);
 const TIME_DIVISOR: u32 = 20;
-const TIME_CHECK_INTERVAL: u64 = 2048;
 
-pub struct TimeManager {
-    limit: SearchLimit,
-    deadline: Option<Instant>,
-    nodes_until_check: u64,
-    stopped: bool,
-}
+pub(super) const TIME_CHECK_INTERVAL: u64 = 2048;
 
-impl TimeManager {
-    pub fn new(limit: SearchLimit) -> Self {
-        let deadline = match limit {
-            SearchLimit::Depth(_) | SearchLimit::Infinite => None,
-            SearchLimit::MoveTime(duration) => Some(Instant::now() + duration),
-            SearchLimit::Clock {
-                remaining,
-                increment,
-            } => Some(Instant::now() + allocate_clock_time(remaining, increment)),
-        };
-
-        Self {
-            limit,
-            deadline,
-            nodes_until_check: 1,
-            stopped: false,
-        }
-    }
-
-    pub fn max_depth(&self) -> u8 {
-        match self.limit {
-            SearchLimit::Depth(depth) => depth,
-            SearchLimit::MoveTime(_) | SearchLimit::Clock { .. } | SearchLimit::Infinite => {
-                infinite_depth()
-            }
-        }
-    }
-
-    pub fn should_stop(&mut self) -> bool {
-        if self.stopped {
-            return true;
-        }
-
-        let Some(deadline) = self.deadline else {
-            return false;
-        };
-
-        self.nodes_until_check = self.nodes_until_check.saturating_sub(1);
-
-        if self.nodes_until_check > 0 {
-            return false;
-        }
-
-        self.nodes_until_check = TIME_CHECK_INTERVAL;
-        self.stopped = Instant::now() >= deadline;
-
-        self.stopped
-    }
-
-    pub fn has_stopped(&self) -> bool {
-        self.stopped
+pub(super) fn deadline_for(limit: SearchLimit) -> Option<Instant> {
+    match limit {
+        SearchLimit::Depth(_) | SearchLimit::Infinite => None,
+        SearchLimit::MoveTime(duration) => Some(Instant::now() + duration),
+        SearchLimit::Clock {
+            remaining,
+            increment,
+        } => Some(Instant::now() + allocate_clock_time(remaining, increment)),
     }
 }
 
-fn allocate_clock_time(remaining: Duration, increment: Duration) -> Duration {
+pub(super) fn max_depth_for(limit: SearchLimit) -> u8 {
+    match limit {
+        SearchLimit::Depth(depth) => depth,
+        SearchLimit::MoveTime(_) | SearchLimit::Clock { .. } | SearchLimit::Infinite => {
+            infinite_depth()
+        }
+    }
+}
+
+pub(super) fn allocate_clock_time(remaining: Duration, increment: Duration) -> Duration {
     if remaining <= CLOCK_SAFETY_MARGIN {
         return Duration::ZERO;
     }
@@ -100,9 +60,8 @@ mod tests {
 
     #[test]
     fn expired_timer_stops_on_first_poll() {
-        let mut timer = TimeManager::new(SearchLimit::MoveTime(Duration::ZERO));
+        let deadline = deadline_for(SearchLimit::MoveTime(Duration::ZERO)).unwrap();
 
-        assert!(timer.should_stop());
-        assert!(timer.has_stopped());
+        assert!(Instant::now() >= deadline);
     }
 }

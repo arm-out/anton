@@ -1,7 +1,7 @@
 mod alphabeta;
 mod time;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::{
     board::Board,
@@ -9,7 +9,7 @@ use crate::{
     movegen::{MoveGenerator, moves::Move},
 };
 
-use self::time::TimeManager;
+use self::time::{TIME_CHECK_INTERVAL, deadline_for, max_depth_for};
 
 const DEFAULT_SEARCH_DEPTH: u8 = 5;
 const MAX_SEARCH_DEPTH: u8 = u8::MAX;
@@ -29,9 +29,9 @@ pub enum SearchLimit {
 pub struct SearchResult {
     pub best_move: Option<Move>,
     pub score: Score,
+    pub stats: SearchStats,
 }
 
-#[cfg(feature = "search-stats")]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct SearchStats {
     pub nodes: u64,
@@ -39,66 +39,77 @@ pub struct SearchStats {
     pub beta_cutoffs: u64,
 }
 
-trait SearchObserver {
-    fn root(&mut self) {}
-    fn node(&mut self) {}
-    fn leaf(&mut self) {}
-    fn beta_cutoff(&mut self) {}
+struct SearchRefs<'a> {
+    board: &'a mut Board,
+    movegen: &'a MoveGenerator,
 }
 
-struct NoStats;
-
-impl SearchObserver for NoStats {}
-
-struct SearchContext<'a, O: SearchObserver> {
-    observer: &'a mut O,
-    timer: Option<&'a mut TimeManager>,
+struct SearchInfo {
+    limit: SearchLimit,
+    stats: SearchStats,
+    deadline: Option<Instant>,
+    stopped: bool,
+    completed_depth: bool,
 }
 
-impl<'a, O: SearchObserver> SearchContext<'a, O> {
-    fn new(observer: &'a mut O, timer: Option<&'a mut TimeManager>) -> Self {
-        Self { observer, timer }
+impl SearchInfo {
+    fn new(limit: SearchLimit) -> Self {
+        Self {
+            limit,
+            stats: SearchStats::default(),
+            deadline: deadline_for(limit),
+            stopped: false,
+            completed_depth: false,
+        }
     }
 
     fn root(&mut self) {
-        self.observer.root();
+        self.stats.nodes += 1;
     }
 
     fn node(&mut self) {
-        self.observer.node();
+        self.stats.nodes += 1;
     }
 
     fn leaf(&mut self) {
-        self.observer.leaf();
+        self.stats.leaves += 1;
     }
 
     fn beta_cutoff(&mut self) {
-        self.observer.beta_cutoff();
+        self.stats.beta_cutoffs += 1;
+    }
+
+    fn max_depth(&self) -> u8 {
+        max_depth_for(self.limit)
     }
 
     fn should_stop(&mut self) -> bool {
-        self.timer
-            .as_deref_mut()
-            .is_some_and(TimeManager::should_stop)
-    }
-}
+        if self.stopped {
+            return true;
+        }
 
-#[cfg(feature = "search-stats")]
-impl SearchObserver for SearchStats {
-    fn root(&mut self) {
-        self.nodes += 1;
-    }
+        if self.deadline.is_none() {
+            return false;
+        }
 
-    fn node(&mut self) {
-        self.nodes += 1;
-    }
+        if self.stats.nodes > 1 && self.stats.nodes % TIME_CHECK_INTERVAL != 0 {
+            return false;
+        }
 
-    fn leaf(&mut self) {
-        self.leaves += 1;
+        self.stop_if_expired()
     }
 
-    fn beta_cutoff(&mut self) {
-        self.beta_cutoffs += 1;
+    fn stop_if_expired(&mut self) -> bool {
+        if self.stopped {
+            return true;
+        }
+
+        let Some(deadline) = self.deadline else {
+            return false;
+        };
+
+        self.stopped = Instant::now() >= deadline;
+        self.stopped
     }
 }
 
@@ -114,69 +125,47 @@ impl Search {
     }
 
     pub fn search(&self, board: &mut Board, limit: SearchLimit) -> SearchResult {
-        let mut timer = TimeManager::new(limit);
-        let max_depth = timer.max_depth();
+        let mut info = SearchInfo::new(limit);
+        let max_depth = info.max_depth();
         let mut best_result = None;
 
         for depth in 1..=max_depth {
-            if depth > 1 && timer.should_stop() {
+            if depth > 1 && info.stop_if_expired() {
                 break;
             }
 
-            let (result, completed) = self.search_depth_timed(board, depth, &mut timer);
+            info.completed_depth = false;
+            let mut result = self.search_depth_inner(
+                SearchRefs {
+                    board,
+                    movegen: &self.movegen,
+                },
+                depth,
+                &mut info,
+            );
+            let completed = info.completed_depth;
 
             if completed || best_result.is_none() {
+                result.stats = info.stats;
                 best_result = Some(result);
-            }
-
-            if timer.should_stop() {
-                break;
             }
         }
 
-        best_result.unwrap_or_default()
-    }
-
-    pub fn search_default(&self, board: &mut Board) -> SearchResult {
-        self.search(board, SearchLimit::Depth(DEFAULT_SEARCH_DEPTH))
+        let mut result = best_result.unwrap_or_default();
+        result.stats = info.stats;
+        result
     }
 
     pub fn search_depth(&self, board: &mut Board, depth: u8) -> SearchResult {
-        let mut observer = NoStats;
-        let mut context = SearchContext::new(&mut observer, None);
-
-        self.search_depth_inner(board, depth, &mut context)
-    }
-
-    #[cfg(feature = "search-stats")]
-    pub fn search_depth_with_stats(
-        &self,
-        board: &mut Board,
-        depth: u8,
-    ) -> (SearchResult, SearchStats) {
-        let mut stats = SearchStats::default();
-        let mut context = SearchContext::new(&mut stats, None);
-        let result = self.search_depth_inner(board, depth, &mut context);
-
-        (result, stats)
-    }
-
-    fn search_depth_timed(
-        &self,
-        board: &mut Board,
-        depth: u8,
-        timer: &mut TimeManager,
-    ) -> (SearchResult, bool) {
-        let mut observer = NoStats;
-        let mut context = SearchContext::new(&mut observer, Some(timer));
-        let result = self.search_depth_inner(board, depth, &mut context);
-
-        let completed = context
-            .timer
-            .as_deref()
-            .is_none_or(|timer| !timer.has_stopped());
-
-        (result, completed)
+        let mut info = SearchInfo::new(SearchLimit::Depth(depth));
+        self.search_depth_inner(
+            SearchRefs {
+                board,
+                movegen: &self.movegen,
+            },
+            depth,
+            &mut info,
+        )
     }
 
     pub fn apply_uci_move(&self, board: &mut Board, uci_move: &str) -> Result<(), String> {
@@ -230,7 +219,7 @@ mod tests {
         let mut board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         let search = Search::new();
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         assert!(result.best_move.is_some());
         assert_eq!(board.us(), crate::board::piece::Color::White);
@@ -242,7 +231,7 @@ mod tests {
         let mut board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
         let search = Search::new();
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         let best_move = result.best_move.unwrap();
         assert_eq!(best_move.from(), Square::E4);
@@ -255,7 +244,7 @@ mod tests {
             Board::from_fen("kr3b1r/p5pp/p1Qp4/3P4/1P6/P1R5/2P2PPP/2K1R3 b - - 2 23").unwrap();
         let search = Search::new();
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         assert_eq!(result.best_move.unwrap().to_uci(), "b8b7");
     }
@@ -265,7 +254,7 @@ mod tests {
         let mut board = Board::from_fen("2R5/7p/1p2pQp1/8/5k2/P7/1P3PPP/4K2R b K - 2 41").unwrap();
         let search = Search::new();
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         assert!(result.best_move.is_some());
     }
@@ -279,8 +268,25 @@ mod tests {
         let iterative = search.search(&mut iterative_board, SearchLimit::Depth(3));
         let fixed = search.search_depth(&mut fixed_board, 3);
 
-        assert_eq!(iterative, fixed);
+        assert_eq!(iterative.best_move, fixed.best_move);
+        assert_eq!(iterative.score, fixed.score);
         assert_eq!(iterative_board.history.len(), 0);
+    }
+
+    #[test]
+    fn search_results_always_include_stats() {
+        let mut default_board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        let mut iterative_board = default_board.clone();
+        let mut fixed_board = default_board.clone();
+        let search = Search::new();
+
+        let default = search.search(&mut default_board, default_limit());
+        let iterative = search.search(&mut iterative_board, SearchLimit::Depth(1));
+        let fixed = search.search_depth(&mut fixed_board, 1);
+
+        assert!(default.stats.nodes > 0);
+        assert!(iterative.stats.nodes > 0);
+        assert!(fixed.stats.nodes > 0);
     }
 
     #[test]
@@ -316,7 +322,7 @@ mod tests {
             search.apply_uci_move(&mut board, uci_move).unwrap();
         }
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         assert!(result.best_move.is_some());
     }

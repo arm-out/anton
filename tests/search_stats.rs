@@ -1,5 +1,3 @@
-#![cfg(feature = "search-stats")]
-
 use anton::{board::Board, search::Search};
 
 struct SearchStatsCase {
@@ -62,7 +60,7 @@ fn print_search_stats() {
 
     for case in CASES {
         let mut board = Board::from_fen(case.fen).unwrap();
-        let (_, stats) = search.search_depth_with_stats(&mut board, case.depth);
+        let stats = search.search_depth(&mut board, case.depth).stats;
 
         let searched_pct = stats.nodes as f64 * 100.0 / case.perft_nodes as f64;
         let leaf_pct = stats.leaves as f64 * 100.0 / stats.nodes as f64;

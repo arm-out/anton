@@ -1,5 +1,3 @@
-#![cfg(feature = "search-stats")]
-
 use anton::{board::Board, search::Search};
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
@@ -39,14 +37,15 @@ fn bench_search(c: &mut Criterion) {
     for position in POSITIONS {
         let template = Board::from_fen(position.fen).unwrap();
         let mut board = template.clone();
-        let (_, expected_stats) = search.search_depth_with_stats(&mut board, position.depth);
+        let expected_stats = search.search_depth(&mut board, position.depth).stats;
 
         group.throughput(Throughput::Elements(expected_stats.nodes));
 
         group.bench_function(position.name, |b| {
             b.iter(|| {
                 let mut board = template.clone();
-                let (result, stats) = search.search_depth_with_stats(&mut board, black_box(position.depth));
+                let result = search.search_depth(&mut board, black_box(position.depth));
+                let stats = result.stats;
 
                 assert!(result.best_move.is_some());
                 assert_eq!(stats.nodes, expected_stats.nodes);

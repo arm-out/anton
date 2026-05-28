@@ -4,9 +4,6 @@ version = "0.3.0"
 edition = "2024"
 authors = ["Armin (armout) Suraj"]
 
-[features]
-search-stats = []
-
 [profile.dev]
 opt-level = 0
 debug = true
@@ -44,4 +41,3 @@ harness = false
 [[bench]]
 name = "search"
 harness = false
-required-features = ["search-stats"]
