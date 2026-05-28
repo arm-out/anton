@@ -1,9 +1,6 @@
 use std::mem::size_of;
 
-use crate::{
-    evaluation::Score,
-    movegen::moves::Move,
-};
+use crate::{evaluation::Score, movegen::moves::Move};
 
 pub const DEFAULT_TT_SIZE_MB: usize = 256;
 
@@ -33,13 +30,7 @@ pub(super) struct TTEntry {
 }
 
 impl TTEntry {
-    pub(super) fn new(
-        key: u64,
-        best_move: Move,
-        score: Score,
-        depth: u8,
-        bound: Bound,
-    ) -> Self {
+    pub(super) fn new(key: u64, best_move: Move, score: Score, depth: u8, bound: Bound) -> Self {
         Self {
             key,
             best_move,
@@ -74,7 +65,13 @@ pub(super) struct TranspositionTable {
 impl TranspositionTable {
     pub(super) fn new(size_mb: usize) -> Self {
         let bytes = size_mb.saturating_mul(BYTES_PER_MIB);
-        let len = (bytes / size_of::<TTEntry>()).max(1);
+        let capacity = (bytes / size_of::<TTEntry>()).max(1);
+        let next_power_of_two = capacity.next_power_of_two();
+        let len = if next_power_of_two == capacity {
+            capacity
+        } else {
+            next_power_of_two >> 1
+        };
 
         Self {
             entries: vec![TTEntry::default(); len],
@@ -113,7 +110,7 @@ impl TranspositionTable {
     }
 
     fn index(&self, key: u64) -> usize {
-        key as usize % self.entries.len()
+        key as usize & (self.entries.len() - 1)
     }
 }
 
@@ -126,9 +123,12 @@ mod tests {
     };
 
     #[test]
-    fn table_size_calculation_creates_at_least_one_entry() {
+    fn table_size_calculation_creates_power_of_two_entries() {
         assert_eq!(TranspositionTable::new(0).len(), 1);
-        assert!(TranspositionTable::new(1).len() > 1);
+        let len = TranspositionTable::new(1).len();
+
+        assert!(len > 1);
+        assert!(len.is_power_of_two());
     }
 
     #[test]
