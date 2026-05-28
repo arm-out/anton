@@ -1,5 +1,6 @@
 mod alphabeta;
 mod time;
+mod transposition;
 
 use std::time::{Duration, Instant};
 
@@ -10,6 +11,8 @@ use crate::{
 };
 
 use self::time::{TIME_CHECK_INTERVAL, deadline_for, max_depth_for};
+pub use self::transposition::DEFAULT_TT_SIZE_MB;
+use self::transposition::TranspositionTable;
 
 const DEFAULT_SEARCH_DEPTH: u8 = 5;
 const MAX_SEARCH_DEPTH: u8 = u8::MAX;
@@ -44,6 +47,7 @@ pub struct SearchStats {
 struct SearchRefs<'a> {
     board: &'a mut Board,
     movegen: &'a MoveGenerator,
+    tt: &'a mut TranspositionTable,
 }
 
 struct SearchInfo {
@@ -121,19 +125,23 @@ impl SearchInfo {
 
 pub struct Search {
     movegen: MoveGenerator,
+    tt: TranspositionTable,
 }
 
 impl Search {
-    pub fn new() -> Self {
+    pub fn new(size_mb: usize) -> Self {
         Self {
             movegen: MoveGenerator::new(),
+            tt: TranspositionTable::new(size_mb),
         }
     }
 
-    pub fn search(&self, board: &mut Board, limit: SearchLimit) -> SearchResult {
+    pub fn search(&mut self, board: &mut Board, limit: SearchLimit) -> SearchResult {
         let mut info = SearchInfo::new(limit);
         let max_depth = info.max_depth();
         let mut best_result = None;
+        let movegen = &self.movegen;
+        let tt = &mut self.tt;
 
         for depth in 1..=max_depth {
             if depth > 1 && info.stop_if_expired() {
@@ -141,10 +149,11 @@ impl Search {
             }
 
             info.completed_depth = false;
-            let mut result = self.search_depth_inner(
+            let mut result = Self::search_depth_inner(
                 SearchRefs {
                     board,
-                    movegen: &self.movegen,
+                    movegen,
+                    tt: &mut *tt,
                 },
                 depth,
                 &mut info,
@@ -165,12 +174,13 @@ impl Search {
         result
     }
 
-    pub fn search_depth(&self, board: &mut Board, depth: u8) -> SearchResult {
+    pub fn search_depth(&mut self, board: &mut Board, depth: u8) -> SearchResult {
         let mut info = SearchInfo::new(SearchLimit::Depth(depth));
-        self.search_depth_inner(
+        Self::search_depth_inner(
             SearchRefs {
                 board,
                 movegen: &self.movegen,
+                tt: &mut self.tt,
             },
             depth,
             &mut info,
@@ -206,7 +216,7 @@ impl Search {
 
 impl Default for Search {
     fn default() -> Self {
-        Self::new()
+        Self::new(DEFAULT_TT_SIZE_MB)
     }
 }
 
@@ -226,7 +236,7 @@ mod tests {
     #[test]
     fn searches_two_plies_and_returns_a_move() {
         let mut board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search(&mut board, default_limit());
 
@@ -238,7 +248,7 @@ mod tests {
     #[test]
     fn chooses_free_material_at_depth_two() {
         let mut board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search(&mut board, default_limit());
 
@@ -251,7 +261,7 @@ mod tests {
     fn finds_move_in_exposed_black_king_position() {
         let mut board =
             Board::from_fen("kr3b1r/p5pp/p1Qp4/3P4/1P6/P1R5/2P2PPP/2K1R3 b - - 2 23").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search(&mut board, default_limit());
 
@@ -261,7 +271,7 @@ mod tests {
     #[test]
     fn finds_move_when_only_terrible_moves_are_available() {
         let mut board = Board::from_fen("2R5/7p/1p2pQp1/8/5k2/P7/1P3PPP/4K2R b K - 2 41").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search(&mut board, default_limit());
 
@@ -272,7 +282,7 @@ mod tests {
     fn iterative_depth_returns_fixed_depth_result() {
         let mut iterative_board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
         let mut fixed_board = iterative_board.clone();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let iterative = search.search(&mut iterative_board, SearchLimit::Depth(3));
         let fixed = search.search_depth(&mut fixed_board, 3);
@@ -287,7 +297,7 @@ mod tests {
         let mut default_board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         let mut iterative_board = default_board.clone();
         let mut fixed_board = default_board.clone();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let default = search.search(&mut default_board, default_limit());
         let iterative = search.search(&mut iterative_board, SearchLimit::Depth(1));
@@ -304,7 +314,7 @@ mod tests {
     #[test]
     fn depth_one_search_sees_recapture_in_quiescence() {
         let mut board = Board::from_fen("4r2k/8/8/4p3/4Q3/8/8/K7 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search_depth(&mut board, 1);
 
@@ -318,7 +328,7 @@ mod tests {
         let mut quiet_board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
         let mut tactical_board =
             Board::from_fen("4r2k/8/8/4p3/4Q3/8/8/K7 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let quiet = search.search_depth(&mut quiet_board, 1);
         let tactical = search.search_depth(&mut tactical_board, 1);
@@ -331,7 +341,7 @@ mod tests {
 
     #[test]
     fn iterative_depth_one_and_two_return_legal_moves() {
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         for depth in [1, 2] {
             let mut board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
@@ -345,7 +355,7 @@ mod tests {
     #[test]
     fn tiny_movetime_returns_without_panicking() {
         let mut board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search(&mut board, SearchLimit::MoveTime(Duration::from_millis(1)));
 
@@ -356,7 +366,7 @@ mod tests {
     #[test]
     fn repeated_root_position_still_returns_a_move() {
         let mut board = Board::from_fen("4k3/8/8/8/8/8/8/4K1N1 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         for uci_move in ["g1f3", "e8d8", "f3g1", "d8e8"] {
             search.apply_uci_move(&mut board, uci_move).unwrap();
@@ -372,7 +382,7 @@ mod tests {
         let mut board =
             Board::from_fen("r1bqk1nr/pp1pppbp/2n3p1/2p5/4P3/N5PN/PPPP1PBP/R1BQ1RK1 w - - 18 13")
                 .unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search_depth(&mut board, 1);
 
@@ -382,7 +392,7 @@ mod tests {
     #[test]
     fn checkmate_position_scores_as_loss_for_side_to_move() {
         let mut board = Board::from_fen("7k/6Q1/6K1/8/8/8/8/8 b - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search_depth(&mut board, 1);
 
@@ -393,7 +403,7 @@ mod tests {
     #[test]
     fn quiescence_detects_capture_mate_at_depth_one() {
         let mut board = Board::from_fen("7k/6n1/6K1/4Q3/8/8/8/8 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search_depth(&mut board, 1);
 
@@ -405,7 +415,7 @@ mod tests {
     #[test]
     fn mate_scores_prefer_faster_mates() {
         let mut board = Board::from_fen("7k/6n1/6K1/4Q3/8/8/8/8 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let depth_one = search.search_depth(&mut board, 1);
         let depth_two = search.search_depth(&mut board, 2);
@@ -416,9 +426,25 @@ mod tests {
     }
 
     #[test]
+    fn repeated_search_uses_transposition_table() {
+        let mut first_board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
+        let mut second_board = first_board.clone();
+        let mut search = Search::new(1);
+
+        let first = search.search_depth(&mut first_board, 4);
+        let second = search.search_depth(&mut second_board, 4);
+
+        assert_eq!(first.best_move, second.best_move);
+        assert_eq!(first.score, second.score);
+        assert!(second.stats.nodes <= first.stats.nodes);
+        assert_eq!(first_board.history.len(), 0);
+        assert_eq!(second_board.history.len(), 0);
+    }
+
+    #[test]
     fn stalemate_position_scores_as_draw() {
         let mut board = Board::from_fen("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search_depth(&mut board, 1);
 

@@ -4,7 +4,10 @@ use crate::{
     movegen::MoveGenerator,
 };
 
-use super::{Search, SearchInfo, SearchRefs, SearchResult};
+use super::{
+    Search, SearchInfo, SearchRefs, SearchResult,
+    transposition::{Bound, TTEntry},
+};
 
 const INF: Score = Score::MAX;
 const MATE_SCORE: Score = 30_000;
@@ -14,7 +17,6 @@ const ROOT_PLY: u8 = 0;
 
 impl Search {
     pub(super) fn search_depth_inner(
-        &self,
         mut refs: SearchRefs<'_>,
         depth: u8,
         info: &mut SearchInfo,
@@ -26,18 +28,20 @@ impl Search {
 
             return SearchResult {
                 best_move: None,
-                score: self.quiescence(&mut refs, -INF, INF, ROOT_PLY, info),
+                score: Self::quiescence(&mut refs, -INF, INF, ROOT_PLY, info),
                 depth,
                 stats: info.stats,
             };
         }
 
+        let key = refs.board.state.zobrist_key;
+        let tt_move = refs.tt.probe(key).map(|entry| entry.best_move());
         let mut best_move = None;
         let mut best_score = -INF;
         let mut alpha = -INF;
         let beta = INF;
         let mut moves = refs.movegen.gen_moves(refs.board);
-        moves.score_moves(refs.board);
+        moves.score_moves(refs.board, tt_move);
         let mut legal_moves = 0;
 
         for i in 0..moves.len() {
@@ -52,7 +56,7 @@ impl Search {
             }
 
             legal_moves += 1;
-            let score = -self.negamax(
+            let score = -Self::negamax(
                 &mut refs,
                 depth - 1,
                 -beta,
@@ -71,7 +75,15 @@ impl Search {
         }
 
         if legal_moves == 0 {
-            best_score = self.terminal_score(refs.board, refs.movegen, ROOT_PLY);
+            best_score = Self::terminal_score(refs.board, refs.movegen, ROOT_PLY);
+        } else if info.completed_depth || !info.stopped {
+            refs.tt.store(
+                key,
+                best_move.unwrap(),
+                score_to_tt(best_score, ROOT_PLY),
+                depth,
+                Bound::Exact,
+            );
         }
 
         info.completed_depth = !info.stopped;
@@ -85,7 +97,6 @@ impl Search {
     }
 
     fn negamax(
-        &self,
         refs: &mut SearchRefs<'_>,
         depth: u8,
         mut alpha: Score,
@@ -101,7 +112,7 @@ impl Search {
         }
 
         if depth == 0 {
-            return self.quiescence(refs, alpha, beta, ply, info);
+            return Self::quiescence(refs, alpha, beta, ply, info);
         }
 
         if info.should_stop() {
@@ -112,9 +123,21 @@ impl Search {
                 .score(refs.board.us(), refs.board.state.game_phase);
         }
 
+        let key = refs.board.state.zobrist_key;
+        let original_alpha = alpha;
+        let tt_entry = refs.tt.probe(key);
+
+        if let Some(entry) = tt_entry
+            && let Some(score) = tt_cutoff(entry, depth, alpha, beta, ply)
+        {
+            return score;
+        }
+
+        let tt_move = tt_entry.map(|entry| entry.best_move());
+        let mut best_move = None;
         let mut best_score = -INF;
         let mut moves = refs.movegen.gen_moves(refs.board);
-        moves.score_moves(refs.board);
+        moves.score_moves(refs.board, tt_move);
         let mut legal_moves = 0;
 
         for i in 0..moves.len() {
@@ -129,10 +152,13 @@ impl Search {
             }
 
             legal_moves += 1;
-            let score = -self.negamax(refs, depth - 1, -beta, -alpha, ply.saturating_add(1), info);
+            let score = -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info);
             refs.board.unmake();
 
-            best_score = best_score.max(score);
+            if best_move.is_none() || score > best_score {
+                best_score = score;
+                best_move = Some(m);
+            }
             alpha = alpha.max(score);
 
             if alpha >= beta {
@@ -143,14 +169,31 @@ impl Search {
 
         if legal_moves == 0 {
             info.leaf();
-            return self.terminal_score(refs.board, refs.movegen, ply);
+            return Self::terminal_score(refs.board, refs.movegen, ply);
+        }
+
+        if !info.stopped {
+            let bound = if best_score <= original_alpha {
+                Bound::Upper
+            } else if best_score >= beta {
+                Bound::Lower
+            } else {
+                Bound::Exact
+            };
+
+            refs.tt.store(
+                key,
+                best_move.unwrap(),
+                score_to_tt(best_score, ply),
+                depth,
+                bound,
+            );
         }
 
         best_score
     }
 
     fn quiescence(
-        &self,
         refs: &mut SearchRefs<'_>,
         mut alpha: Score,
         beta: Score,
@@ -164,7 +207,7 @@ impl Search {
             return DRAW_SCORE;
         }
 
-        let in_check = self.in_check(refs.board, refs.movegen);
+        let in_check = Self::in_check(refs.board, refs.movegen);
         let stand_pat = refs
             .board
             .state
@@ -189,7 +232,7 @@ impl Search {
         }
 
         let mut moves = refs.movegen.gen_moves(refs.board);
-        moves.score_moves(refs.board);
+        moves.score_moves(refs.board, None);
         let mut legal_moves = 0;
 
         for i in 0..moves.len() {
@@ -213,7 +256,7 @@ impl Search {
             }
 
             legal_moves += 1;
-            let score = -self.quiescence(refs, -beta, -alpha, ply + 1, info);
+            let score = -Self::quiescence(refs, -beta, -alpha, ply + 1, info);
             refs.board.unmake();
 
             best_score = best_score.max(score);
@@ -229,29 +272,122 @@ impl Search {
             info.leaf();
 
             if in_check {
-                return self.mated_score(ply);
+                return Self::mated_score(ply);
             }
         }
 
         best_score
     }
 
-    fn terminal_score(&self, board: &Board, movegen: &MoveGenerator, ply: u8) -> Score {
-        if self.in_check(board, movegen) {
-            self.mated_score(ply)
+    fn terminal_score(board: &Board, movegen: &MoveGenerator, ply: u8) -> Score {
+        if Self::in_check(board, movegen) {
+            Self::mated_score(ply)
         } else {
             DRAW_SCORE
         }
     }
 
-    fn mated_score(&self, ply: u8) -> Score {
+    fn mated_score(ply: u8) -> Score {
         -(MATE_SCORE - ply as Score)
     }
 
-    fn in_check(&self, board: &Board, movegen: &MoveGenerator) -> bool {
+    fn in_check(board: &Board, movegen: &MoveGenerator) -> bool {
         let king = board.bitboards[board.us()][PieceType::King];
         let king_square = Square::from_idx(king.0.trailing_zeros() as usize);
 
         movegen.is_attacked(board, king_square, board.them())
+    }
+}
+
+fn tt_cutoff(entry: TTEntry, depth: u8, alpha: Score, beta: Score, ply: u8) -> Option<Score> {
+    if entry.depth() < depth {
+        return None;
+    }
+
+    let score = score_from_tt(entry.score(), ply);
+
+    match entry.bound() {
+        Bound::Exact => Some(score),
+        Bound::Lower if score >= beta => Some(score),
+        Bound::Upper if score <= alpha => Some(score),
+        _ => None,
+    }
+}
+
+fn score_to_tt(score: Score, ply: u8) -> Score {
+    if score > MATE_SCORE - 256 {
+        score + ply as Score
+    } else if score < -MATE_SCORE + 256 {
+        score - ply as Score
+    } else {
+        score
+    }
+}
+
+fn score_from_tt(score: Score, ply: u8) -> Score {
+    if score > MATE_SCORE - 256 {
+        score - ply as Score
+    } else if score < -MATE_SCORE + 256 {
+        score + ply as Score
+    } else {
+        score
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        board::square::Square,
+        movegen::moves::{Move, MoveType},
+    };
+
+    fn entry(score: Score, depth: u8, bound: Bound) -> TTEntry {
+        TTEntry::new(
+            1,
+            Move::new(Square::E2, Square::E4, MoveType::Quiet),
+            score_to_tt(score, 2),
+            depth,
+            bound,
+        )
+    }
+
+    #[test]
+    fn exact_tt_bound_returns_score() {
+        assert_eq!(
+            tt_cutoff(entry(42, 4, Bound::Exact), 4, -100, 100, 2),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn lower_tt_bound_only_cuts_at_or_above_beta() {
+        assert_eq!(
+            tt_cutoff(entry(100, 4, Bound::Lower), 4, -100, 50, 2),
+            Some(100)
+        );
+        assert_eq!(tt_cutoff(entry(25, 4, Bound::Lower), 4, -100, 50, 2), None);
+    }
+
+    #[test]
+    fn upper_tt_bound_only_cuts_at_or_below_alpha() {
+        assert_eq!(
+            tt_cutoff(entry(-100, 4, Bound::Upper), 4, -50, 50, 2),
+            Some(-100)
+        );
+        assert_eq!(tt_cutoff(entry(25, 4, Bound::Upper), 4, -50, 50, 2), None);
+    }
+
+    #[test]
+    fn shallow_tt_entry_does_not_cut_off_deeper_search() {
+        assert_eq!(tt_cutoff(entry(42, 3, Bound::Exact), 4, -100, 100, 2), None);
+    }
+
+    #[test]
+    fn mate_scores_are_adjusted_for_current_ply() {
+        let stored = score_to_tt(29_997, 3);
+
+        assert_eq!(score_from_tt(stored, 1), 29_999);
+        assert_eq!(score_from_tt(stored, 5), 29_995);
     }
 }
