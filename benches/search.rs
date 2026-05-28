@@ -43,14 +43,14 @@ struct TimedSearchPosition {
 
 const TIMED_POSITIONS: &[TimedSearchPosition] = &[
     TimedSearchPosition {
-        name: "startpos_25ms",
+        name: "startpos_1s",
         fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        movetime: Duration::from_millis(25),
+        movetime: Duration::from_millis(1000),
     },
     TimedSearchPosition {
-        name: "kiwipete_25ms",
+        name: "kiwipete_1s",
         fen: "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
-        movetime: Duration::from_millis(25),
+        movetime: Duration::from_millis(1000),
     },
 ];
 
