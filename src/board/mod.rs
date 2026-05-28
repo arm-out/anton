@@ -249,6 +249,8 @@ impl Board {
             return false;
         }
 
+        debug_assert!(self.check_incrementals());
+
         return true;
     }
 
@@ -291,6 +293,7 @@ impl Board {
 
         debug_assert_eq!(self.state.evaluation, restored_evaluation);
         debug_assert_eq!(self.state.game_phase, restored_game_phase);
+        debug_assert!(self.check_incrementals());
     }
 
     pub fn make_quiet(&mut self, m: Move) {
@@ -515,6 +518,64 @@ impl Board {
             self.state.zobrist_key ^= self.zobrist.en_passant[self.state.en_passant]; // En passant
         }
         self.state.zobrist_key ^= self.zobrist.side_to_move[self.state.active_side]; // Side to move
+    }
+
+    fn zobrist_key_from_scratch(&self) -> u64 {
+        let mut key = 0;
+
+        for (idx, piece) in self.mailbox.iter().enumerate() {
+            if *piece != Piece::None {
+                key ^= self.zobrist.pieces[*piece][idx];
+            }
+        }
+
+        key ^= self.zobrist.castling[self.state.castling_rights];
+
+        if self.state.en_passant != Square::None {
+            key ^= self.zobrist.en_passant[self.state.en_passant];
+        }
+
+        key ^ self.zobrist.side_to_move[self.state.active_side]
+    }
+
+    fn game_phase_from_scratch(&self) -> u8 {
+        self.mailbox.iter().map(|piece| phase_value(*piece)).sum()
+    }
+
+    // Debug function adapted from Rustic's check_incrementals.
+    // https://codeberg.org/mvanthoor/rustic/src/branch/master/rustic/src/board/playmove.rs
+    fn check_incrementals(&self) -> bool {
+        const CHECK_INCREMENTALS: &str = "Check Incrementals";
+        let from_scratch_key = self.zobrist_key_from_scratch();
+        let from_scratch_phase = self.game_phase_from_scratch();
+        let from_scratch_evaluation = Evaluation::new(self);
+        let mut result = true;
+
+        if result && from_scratch_key != self.state.zobrist_key {
+            eprintln!(
+                "{CHECK_INCREMENTALS}: Error in Zobrist key. incremental={} from_scratch={}",
+                self.state.zobrist_key, from_scratch_key
+            );
+            result = false;
+        };
+
+        if result && from_scratch_phase != self.state.game_phase {
+            eprintln!(
+                "{CHECK_INCREMENTALS}: Error in game phase. incremental={} from_scratch={}",
+                self.state.game_phase, from_scratch_phase
+            );
+            result = false;
+        };
+
+        if result && from_scratch_evaluation != self.state.evaluation {
+            eprintln!(
+                "{CHECK_INCREMENTALS}: Error in evaluation. incremental={:?} from_scratch={:?}",
+                self.state.evaluation, from_scratch_evaluation
+            );
+            result = false;
+        };
+
+        result
     }
 }
 
