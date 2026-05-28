@@ -63,7 +63,9 @@ fn bench_search(c: &mut Criterion) {
         let mut board = template.clone();
         let expected_stats = search.search_depth(&mut board, position.depth).stats;
 
-        group.throughput(Throughput::Elements(expected_stats.nodes));
+        group.throughput(Throughput::Elements(
+            expected_stats.nodes + expected_stats.qnodes,
+        ));
 
         group.bench_function(position.name, |b| {
             b.iter(|| {
@@ -73,6 +75,7 @@ fn bench_search(c: &mut Criterion) {
 
                 assert!(result.best_move.is_some());
                 assert_eq!(stats.nodes, expected_stats.nodes);
+                assert_eq!(stats.qnodes, expected_stats.qnodes);
                 assert_eq!(stats.leaves, expected_stats.leaves);
                 assert_eq!(stats.beta_cutoffs, expected_stats.beta_cutoffs);
 
@@ -95,16 +98,19 @@ fn bench_timed_search(c: &mut Criterion) {
         let baseline = search.search(&mut board, SearchLimit::MoveTime(position.movetime));
 
         eprintln!(
-            "{}: depth={} nodes={} leaves={} cutoffs={} score={}",
+            "{}: depth={} nodes={} qnodes={} leaves={} cutoffs={} score={}",
             position.name,
             baseline.depth,
             baseline.stats.nodes,
+            baseline.stats.qnodes,
             baseline.stats.leaves,
             baseline.stats.beta_cutoffs,
             baseline.score
         );
 
-        group.throughput(Throughput::Elements(baseline.stats.nodes.max(1)));
+        group.throughput(Throughput::Elements(
+            (baseline.stats.nodes + baseline.stats.qnodes).max(1),
+        ));
 
         group.bench_function(position.name, |b| {
             b.iter(|| {
