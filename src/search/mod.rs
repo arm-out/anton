@@ -326,8 +326,7 @@ mod tests {
     #[test]
     fn tactical_positions_search_more_quiescence_nodes_than_quiet_positions() {
         let mut quiet_board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
-        let mut tactical_board =
-            Board::from_fen("4r2k/8/8/4p3/4Q3/8/8/K7 w - - 0 1").unwrap();
+        let mut tactical_board = Board::from_fen("4r2k/8/8/4p3/4Q3/8/8/K7 w - - 0 1").unwrap();
         let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let quiet = search.search_depth(&mut quiet_board, 1);
