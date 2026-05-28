@@ -55,12 +55,12 @@ const TIMED_POSITIONS: &[TimedSearchPosition] = &[
 ];
 
 fn bench_search(c: &mut Criterion) {
-    let mut search = Search::new(DEFAULT_TT_SIZE_MB);
     let mut group = c.benchmark_group("search/fixed_depth");
 
     for position in POSITIONS {
         let template = Board::from_fen(position.fen).unwrap();
         let mut board = template.clone();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
         let expected_stats = search.search_depth(&mut board, position.depth).stats;
 
         group.throughput(Throughput::Elements(
@@ -70,6 +70,7 @@ fn bench_search(c: &mut Criterion) {
         group.bench_function(position.name, |b| {
             b.iter(|| {
                 let mut board = template.clone();
+                let mut search = Search::new(DEFAULT_TT_SIZE_MB);
                 let result = search.search_depth(&mut board, black_box(position.depth));
                 let stats = result.stats;
 
@@ -84,13 +85,13 @@ fn bench_search(c: &mut Criterion) {
 }
 
 fn bench_timed_search(c: &mut Criterion) {
-    let mut search = Search::new(DEFAULT_TT_SIZE_MB);
     let mut group = c.benchmark_group("search/timed");
     group.sample_size(10);
 
     for position in TIMED_POSITIONS {
         let template = Board::from_fen(position.fen).unwrap();
         let mut board = template.clone();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
         let baseline = search.search(&mut board, SearchLimit::MoveTime(position.movetime));
 
         eprintln!(
@@ -111,6 +112,7 @@ fn bench_timed_search(c: &mut Criterion) {
         group.bench_function(position.name, |b| {
             b.iter(|| {
                 let mut board = template.clone();
+                let mut search = Search::new(DEFAULT_TT_SIZE_MB);
                 let result = search.search(
                     &mut board,
                     SearchLimit::MoveTime(black_box(position.movetime)),
