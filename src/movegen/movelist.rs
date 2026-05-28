@@ -11,6 +11,7 @@ use crate::{
 
 // https://www.chessprogramming.org/Encoding_Moves#Move_Index
 const MAX_MOVES: usize = 256;
+const TT_MOVE_SCORE: i16 = 30_000;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 struct ScoredMove {
@@ -43,9 +44,13 @@ impl MoveList {
         self.0[idx].m
     }
 
-    pub fn score_moves(&mut self, board: &Board) {
+    pub fn score_moves(&mut self, board: &Board, tt_move: Option<Move>) {
         for scored in &mut self.0 {
-            scored.score = score_move(board, scored.m);
+            scored.score = if Some(scored.m) == tt_move {
+                TT_MOVE_SCORE
+            } else {
+                score_move(board, scored.m)
+            };
         }
     }
 
@@ -148,7 +153,7 @@ mod tests {
         moves.push(quiet);
         moves.push(pawn_capture);
         moves.push(queen_capture);
-        moves.score_moves(&board);
+        moves.score_moves(&board, None);
 
         assert_eq!(moves.pick_next(0), queen_capture);
         assert_eq!(moves.pick_next(1), pawn_capture);
@@ -164,7 +169,7 @@ mod tests {
 
         moves.push(quiet);
         moves.push(queen_capture);
-        moves.score_moves(&board);
+        moves.score_moves(&board, None);
 
         let (m, score) = moves.pick_next_scored(0);
 
