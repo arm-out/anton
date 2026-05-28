@@ -50,6 +50,10 @@ impl MoveList {
     }
 
     pub fn pick_next(&mut self, start_idx: usize) -> Move {
+        self.pick_next_scored(start_idx).0
+    }
+
+    pub fn pick_next_scored(&mut self, start_idx: usize) -> (Move, i16) {
         let mut best_idx = start_idx;
 
         for idx in start_idx + 1..self.0.len() {
@@ -59,7 +63,7 @@ impl MoveList {
         }
 
         self.0.swap(start_idx, best_idx);
-        self.0[start_idx].m
+        (self.0[start_idx].m, self.0[start_idx].score)
     }
 }
 
@@ -149,5 +153,22 @@ mod tests {
         assert_eq!(moves.pick_next(0), queen_capture);
         assert_eq!(moves.pick_next(1), pawn_capture);
         assert_eq!(moves.pick_next(2), quiet);
+    }
+
+    #[test]
+    fn pick_next_scored_returns_selected_move_score() {
+        let board = Board::from_fen("4k3/8/8/2p1q3/1Q1P4/8/8/4K3 w - - 0 1").unwrap();
+        let quiet = Move::new(Square::E1, Square::D1, MoveType::Quiet);
+        let queen_capture = Move::new(Square::D4, Square::E5, MoveType::Capture);
+        let mut moves = MoveList::default();
+
+        moves.push(quiet);
+        moves.push(queen_capture);
+        moves.score_moves(&board);
+
+        let (m, score) = moves.pick_next_scored(0);
+
+        assert_eq!(m, queen_capture);
+        assert!(score > 0);
     }
 }

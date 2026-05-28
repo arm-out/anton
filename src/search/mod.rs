@@ -36,6 +36,7 @@ pub struct SearchResult {
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct SearchStats {
     pub nodes: u64,
+    pub qnodes: u64,
     pub leaves: u64,
     pub beta_cutoffs: u64,
 }
@@ -70,6 +71,10 @@ impl SearchInfo {
 
     fn node(&mut self) {
         self.stats.nodes += 1;
+    }
+
+    fn qnode(&mut self) {
+        self.stats.qnodes += 1;
     }
 
     fn leaf(&mut self) {
@@ -291,6 +296,37 @@ mod tests {
         assert!(default.stats.nodes > 0);
         assert!(iterative.stats.nodes > 0);
         assert!(fixed.stats.nodes > 0);
+        assert!(default.stats.qnodes > 0);
+        assert!(iterative.stats.qnodes > 0);
+        assert!(fixed.stats.qnodes > 0);
+    }
+
+    #[test]
+    fn depth_one_search_sees_recapture_in_quiescence() {
+        let mut board = Board::from_fen("4r2k/8/8/4p3/4Q3/8/8/K7 w - - 0 1").unwrap();
+        let search = Search::new();
+
+        let result = search.search_depth(&mut board, 1);
+
+        assert_ne!(result.best_move.unwrap().to_uci(), "e4e5");
+        assert!(result.stats.qnodes > 0);
+        assert_eq!(board.history.len(), 0);
+    }
+
+    #[test]
+    fn tactical_positions_search_more_quiescence_nodes_than_quiet_positions() {
+        let mut quiet_board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        let mut tactical_board =
+            Board::from_fen("4r2k/8/8/4p3/4Q3/8/8/K7 w - - 0 1").unwrap();
+        let search = Search::new();
+
+        let quiet = search.search_depth(&mut quiet_board, 1);
+        let tactical = search.search_depth(&mut tactical_board, 1);
+
+        assert!(quiet.stats.qnodes > 0);
+        assert!(tactical.stats.qnodes > quiet.stats.qnodes);
+        assert_eq!(quiet_board.history.len(), 0);
+        assert_eq!(tactical_board.history.len(), 0);
     }
 
     #[test]
@@ -351,7 +387,32 @@ mod tests {
         let result = search.search_depth(&mut board, 1);
 
         assert!(result.best_move.is_none());
-        assert!(result.score < -20_000);
+        assert_eq!(result.score, -30_000);
+    }
+
+    #[test]
+    fn quiescence_detects_capture_mate_at_depth_one() {
+        let mut board = Board::from_fen("7k/6n1/6K1/4Q3/8/8/8/8 w - - 0 1").unwrap();
+        let search = Search::new();
+
+        let result = search.search_depth(&mut board, 1);
+
+        assert_eq!(result.best_move.unwrap().to_uci(), "e5g7");
+        assert_eq!(result.score, 29_999);
+        assert_eq!(board.history.len(), 0);
+    }
+
+    #[test]
+    fn mate_scores_prefer_faster_mates() {
+        let mut board = Board::from_fen("7k/6n1/6K1/4Q3/8/8/8/8 w - - 0 1").unwrap();
+        let search = Search::new();
+
+        let depth_one = search.search_depth(&mut board, 1);
+        let depth_two = search.search_depth(&mut board, 2);
+
+        assert_eq!(depth_one.score, 29_999);
+        assert!(depth_two.score <= depth_one.score);
+        assert_eq!(board.history.len(), 0);
     }
 
     #[test]
