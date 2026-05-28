@@ -30,6 +30,7 @@ impl Search {
                     .state
                     .evaluation
                     .score(refs.board.us(), refs.board.state.game_phase),
+                depth,
                 stats: info.stats,
             };
         }
@@ -74,6 +75,7 @@ impl Search {
         SearchResult {
             best_move,
             score: best_score,
+            depth,
             stats: info.stats,
         }
     }

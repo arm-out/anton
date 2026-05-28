@@ -29,6 +29,7 @@ pub enum SearchLimit {
 pub struct SearchResult {
     pub best_move: Option<Move>,
     pub score: Score,
+    pub depth: u8,
     pub stats: SearchStats,
 }
 
@@ -146,6 +147,9 @@ impl Search {
             let completed = info.completed_depth;
 
             if completed || best_result.is_none() {
+                if !completed {
+                    result.depth = 0;
+                }
                 result.stats = info.stats;
                 best_result = Some(result);
             }
