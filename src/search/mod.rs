@@ -332,4 +332,26 @@ mod tests {
 
         assert!(result.best_move.is_some());
     }
+
+    #[test]
+    fn checkmate_position_scores_as_loss_for_side_to_move() {
+        let mut board = Board::from_fen("7k/6Q1/6K1/8/8/8/8/8 b - - 0 1").unwrap();
+        let search = Search::new();
+
+        let result = search.search_depth(&mut board, 1);
+
+        assert!(result.best_move.is_none());
+        assert!(result.score < -20_000);
+    }
+
+    #[test]
+    fn stalemate_position_scores_as_draw() {
+        let mut board = Board::from_fen("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1").unwrap();
+        let search = Search::new();
+
+        let result = search.search_depth(&mut board, 1);
+
+        assert!(result.best_move.is_none());
+        assert_eq!(result.score, 0);
+    }
 }

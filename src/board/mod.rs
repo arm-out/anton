@@ -1,5 +1,5 @@
 use crate::board::castling::{CastlingKind, CastlingPerms};
-use crate::evaluation::Evaluation;
+use crate::evaluation::{Evaluation, phase_value};
 use crate::movegen::MoveGenerator;
 use crate::movegen::moves::{Move, MoveType};
 use bitboard::Bitboard;
@@ -42,6 +42,7 @@ impl Board {
                 fullmove_number: 1,
                 zobrist_key: 0,
                 evaluation: Evaluation::default(),
+                game_phase: 0,
                 next_move: Move(0),
                 captured: Piece::None,
             },
@@ -64,7 +65,8 @@ impl Board {
         self.bitboards[piece.color()][piece.ptype()].set(square);
         self.occupancy[piece.color()].set(square);
         self.mailbox[square] = piece;
-        self.state.evaluation.add_piece(piece);
+        self.state.evaluation.add_piece(square, piece);
+        self.state.game_phase += phase_value(piece);
         self.update_hash(square, piece);
     }
 
@@ -73,7 +75,8 @@ impl Board {
         self.bitboards[piece.color()][piece.ptype()].clear(square);
         self.occupancy[piece.color()].clear(square);
         self.mailbox[square] = Piece::None;
-        self.state.evaluation.remove_piece(piece);
+        self.state.evaluation.remove_piece(square, piece);
+        self.state.game_phase -= phase_value(piece);
         self.update_hash(square, piece);
     }
 
@@ -128,6 +131,49 @@ impl Board {
             .skip(1)
             .step_by(2)
             .any(|state| state.zobrist_key == current_key)
+    }
+
+    pub fn has_bishop_pair(&self, color: Color) -> bool {
+        let bishops = self.get_piece(PieceType::Bishop, color);
+
+        let mut white = 0;
+        let mut black = 0;
+
+        if bishops.count_ones() >= 2 {
+            for square in bishops {
+                match square.color() {
+                    Color::White => white += 1,
+                    Color::Black => black += 1,
+                }
+            }
+        }
+
+        (white >= 1) && (black >= 1)
+    }
+
+    pub fn can_force_checkmate(&self) -> bool {
+        let white = self.bitboards[Color::White];
+        let black = self.bitboards[Color::Black];
+
+        // Minimum material for checkmate
+        white[PieceType::Queen] > Bitboard(0)   // King + 1 Major Piece
+            || white[PieceType::Rook] > Bitboard(0)   // King + 1 Major Piece
+            || black[PieceType::Queen] > Bitboard(0)   // King + 1 Major Piece
+            || black[PieceType::Rook] > Bitboard(0)   // King + 1 Major Piece
+            || (white[PieceType::Bishop] > Bitboard(0) && white[PieceType::Knight] > Bitboard(0))   // Bishop + Knight
+            || (black[PieceType::Bishop] > Bitboard(0) && black[PieceType::Knight] > Bitboard(0))   // Bishop + Knight
+            || white[PieceType::Pawn] > Bitboard(0)   // King + 1 Major Piece (Promo)
+            || black[PieceType::Pawn] > Bitboard(0)   // King + 1 Major Piece (Promo)
+            || self.has_bishop_pair(Color::White)   // Bishop Pair
+            || self.has_bishop_pair(Color::Black) // Bishop Pair
+    }
+
+    pub fn draw_by_fifty_rule(&self) -> bool {
+        self.state.halfmove_clock >= 100
+    }
+
+    pub fn is_draw(&self) -> bool {
+        (!self.can_force_checkmate()) || self.is_repetition() || self.draw_by_fifty_rule()
     }
 
     // Make Move
@@ -209,6 +255,7 @@ impl Board {
     pub fn unmake(&mut self) {
         let captured = self.state.captured; // Captured Piece
         let evaluation = self.state.evaluation;
+        let game_phase = self.state.game_phase;
 
         if let Some(state) = self.history.pop() {
             self.state = state;
@@ -217,7 +264,9 @@ impl Board {
         }
 
         let restored_evaluation = self.state.evaluation;
+        let restored_game_phase = self.state.game_phase;
         self.state.evaluation = evaluation;
+        self.state.game_phase = game_phase;
 
         // Move to undo
         let m = self.state.next_move;
@@ -241,6 +290,7 @@ impl Board {
         }
 
         debug_assert_eq!(self.state.evaluation, restored_evaluation);
+        debug_assert_eq!(self.state.game_phase, restored_game_phase);
     }
 
     pub fn make_quiet(&mut self, m: Move) {

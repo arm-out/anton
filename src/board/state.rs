@@ -17,6 +17,7 @@ pub struct GameState {
     pub fullmove_number: u16,
     pub zobrist_key: u64,
     pub evaluation: Evaluation,
+    pub game_phase: u8,
     pub captured: Piece,
     pub next_move: Move,
 }
