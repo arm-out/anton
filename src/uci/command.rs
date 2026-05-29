@@ -4,7 +4,7 @@ use crate::board::Board;
 pub enum UCICommand {
     Uci,
     IsReady,
-    // SetOption,
+    SetOption(SetOptionCommand),
     Go(GoCommand),
     Position(PositionCommand),
     Quit,
@@ -20,6 +20,12 @@ pub struct GoCommand {
     pub winc_ms: Option<u64>,
     pub binc_ms: Option<u64>,
     pub infinite: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SetOptionCommand {
+    pub name: String,
+    pub value: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -43,6 +49,8 @@ pub enum UCIParseError {
 
     InvalidGoCommand,
     InvalidGoValue,
+
+    InvalidSetOption,
 }
 
 pub fn parse_command(line: &str) -> Result<UCICommand, UCIParseError> {
@@ -52,6 +60,7 @@ pub fn parse_command(line: &str) -> Result<UCICommand, UCIParseError> {
     let parsed = match command {
         "uci" => UCICommand::Uci,
         "isready" => UCICommand::IsReady,
+        "setoption" => UCICommand::SetOption(parse_setoption_command(parts)?),
         "go" => UCICommand::Go(parse_go_command(parts)?),
         "position" => UCICommand::Position(parse_position_command(parts)?),
         "quit" => UCICommand::Quit,
@@ -60,6 +69,47 @@ pub fn parse_command(line: &str) -> Result<UCICommand, UCIParseError> {
     };
 
     Ok(parsed)
+}
+
+pub fn parse_setoption_command(
+    parts: &mut std::str::SplitWhitespace,
+) -> Result<SetOptionCommand, UCIParseError> {
+    if parts.next() != Some("name") {
+        return Err(UCIParseError::InvalidSetOption);
+    }
+
+    let mut name_parts = Vec::new();
+
+    for part in parts.by_ref() {
+        if part == "value" {
+            let value_parts: Vec<_> = parts.collect();
+            let value = if value_parts.is_empty() {
+                None
+            } else {
+                Some(value_parts.join(" "))
+            };
+
+            if name_parts.is_empty() {
+                return Err(UCIParseError::InvalidSetOption);
+            }
+
+            return Ok(SetOptionCommand {
+                name: name_parts.join(" "),
+                value,
+            });
+        }
+
+        name_parts.push(part);
+    }
+
+    if name_parts.is_empty() {
+        return Err(UCIParseError::InvalidSetOption);
+    }
+
+    Ok(SetOptionCommand {
+        name: name_parts.join(" "),
+        value: None,
+    })
 }
 
 pub fn parse_position_command(
