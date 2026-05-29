@@ -2,7 +2,7 @@
 
 ## Strength
 
-|                            version                            | feature                                                    |                        selfplay<br>[20+0.2]                        |                                            estimated elo<br>[10+0.1]                                            | CCRL<br>40/15 |
+|                            version                            | feature                                                    |                        selfplay<br>[20+0.2]                        |                                            estimated elo<br>[40+0.4]                                            | CCRL<br>40/15 |
 | :-----------------------------------------------------------: | ---------------------------------------------------------- | :----------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------: | :-----------: |
 | [0.4.0](https://github.com/arm-out/anton/releases/tag/v0.4.0) | quiescent search, transposition table and TT move ordering | [+562.6](https://github.com/arm-out/anton/pull/4#issue-4543080049) |                    [1844](https://github.com/arm-out/anton/pull/4/#issuecomment-4575416596)                     |               |
 | [0.3.0](https://github.com/arm-out/anton/releases/tag/v0.3.0) | piece square tables and tapered evaluation                 | [+52.3](https://github.com/arm-out/anton/pull/3#issue-4535688723)  |                     [1224](https://github.com/arm-out/anton/pull/3#issuecomment-4560418705)                     |               |
