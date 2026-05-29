@@ -43,10 +43,19 @@ fn spawn_command_thread(
             };
 
             match command {
+                // TODO: actually support options
                 command::UCICommand::Uci => {
                     if send_output(&output_tx, protocol::id_name())
                         || send_output(&output_tx, protocol::id_author())
                         || send_output(&output_tx, protocol::uci_ok())
+                        || send_output(
+                            &output_tx,
+                            "option name Threads type spin default 1 min 1 max 1",
+                        )
+                        || send_output(
+                            &output_tx,
+                            "option name Hash type spin default 256 min 256 max 256",
+                        )
                     {
                         break;
                     }
@@ -56,6 +65,8 @@ fn spawn_command_thread(
                         break;
                     }
                 }
+                // TODO: actually support options
+                command::UCICommand::SetOption(_) => {}
                 command::UCICommand::Position(position) => {
                     if engine_command_tx
                         .send(EngineCommand::Position(position))
