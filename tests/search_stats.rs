@@ -46,8 +46,6 @@ const CASES: &[SearchStatsCase] = &[
 #[test]
 #[ignore]
 fn print_search_stats() {
-    let mut search = Search::new(DEFAULT_TT_SIZE_MB);
-
     println!(
         "{:<18} {:>5} {:>12} {:>12} {:>12} {:>12} {:>12} {:>10} {:>10} {:>10}",
         "case",
@@ -64,7 +62,10 @@ fn print_search_stats() {
 
     for case in CASES {
         let mut board = Board::from_fen(case.fen).unwrap();
-        let stats = search.search_depth(&mut board, case.depth).stats;
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
+        let stats = search
+            .search(&mut board, anton::search::SearchLimit::Depth(case.depth))
+            .stats;
 
         let total_nodes = stats.nodes + stats.qnodes;
         let searched_pct = total_nodes as f64 * 100.0 / case.perft_nodes as f64;

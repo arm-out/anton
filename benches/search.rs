@@ -71,7 +71,8 @@ fn bench_search(c: &mut Criterion) {
             b.iter(|| {
                 let mut board = template.clone();
                 let mut search = Search::new(DEFAULT_TT_SIZE_MB);
-                let result = search.search_depth(&mut board, black_box(position.depth));
+                let result =
+                    search.search(&mut board, black_box(SearchLimit::Depth(position.depth)));
                 let stats = result.stats;
 
                 assert!(result.best_move.is_some());
