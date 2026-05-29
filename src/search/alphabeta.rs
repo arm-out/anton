@@ -152,7 +152,19 @@ impl Search {
             }
 
             legal_moves += 1;
-            let score = -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info);
+
+            // PVS search
+            let mut score = if legal_moves == 1 {
+                -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info)
+            } else {
+                let null_beta = alpha.saturating_add(1);
+                -Self::negamax(refs, depth - 1, -null_beta, -alpha, ply + 1, info)
+            };
+
+            // Null window fail -> search with full window
+            if legal_moves > 1 && score > alpha && score < beta {
+                score = -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info);
+            }
             refs.board.unmake();
 
             if best_move.is_none() || score > best_score {
