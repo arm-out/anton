@@ -1,7 +1,8 @@
 mod alphabeta;
 mod time;
+mod transposition;
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::{
     board::Board,
@@ -9,7 +10,9 @@ use crate::{
     movegen::{MoveGenerator, moves::Move},
 };
 
-use self::time::TimeManager;
+use self::time::{TIME_CHECK_INTERVAL, deadline_for, max_depth_for};
+pub use self::transposition::DEFAULT_TT_SIZE_MB;
+use self::transposition::TranspositionTable;
 
 const DEFAULT_SEARCH_DEPTH: u8 = 5;
 const MAX_SEARCH_DEPTH: u8 = u8::MAX;
@@ -29,154 +32,159 @@ pub enum SearchLimit {
 pub struct SearchResult {
     pub best_move: Option<Move>,
     pub score: Score,
+    pub depth: u8,
+    pub stats: SearchStats,
 }
 
-#[cfg(feature = "search-stats")]
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct SearchStats {
     pub nodes: u64,
+    pub qnodes: u64,
     pub leaves: u64,
     pub beta_cutoffs: u64,
 }
 
-trait SearchObserver {
-    fn root(&mut self) {}
-    fn node(&mut self) {}
-    fn leaf(&mut self) {}
-    fn beta_cutoff(&mut self) {}
+struct SearchRefs<'a> {
+    board: &'a mut Board,
+    movegen: &'a MoveGenerator,
+    tt: &'a mut TranspositionTable,
 }
 
-struct NoStats;
-
-impl SearchObserver for NoStats {}
-
-struct SearchContext<'a, O: SearchObserver> {
-    observer: &'a mut O,
-    timer: Option<&'a mut TimeManager>,
+struct SearchInfo {
+    limit: SearchLimit,
+    stats: SearchStats,
+    deadline: Option<Instant>,
+    stopped: bool,
+    completed_depth: bool,
 }
 
-impl<'a, O: SearchObserver> SearchContext<'a, O> {
-    fn new(observer: &'a mut O, timer: Option<&'a mut TimeManager>) -> Self {
-        Self { observer, timer }
+impl SearchInfo {
+    fn new(limit: SearchLimit) -> Self {
+        Self {
+            limit,
+            stats: SearchStats::default(),
+            deadline: deadline_for(limit),
+            stopped: false,
+            completed_depth: false,
+        }
     }
 
     fn root(&mut self) {
-        self.observer.root();
+        self.stats.nodes += 1;
     }
 
     fn node(&mut self) {
-        self.observer.node();
+        self.stats.nodes += 1;
+    }
+
+    fn qnode(&mut self) {
+        self.stats.qnodes += 1;
     }
 
     fn leaf(&mut self) {
-        self.observer.leaf();
+        self.stats.leaves += 1;
     }
 
     fn beta_cutoff(&mut self) {
-        self.observer.beta_cutoff();
+        self.stats.beta_cutoffs += 1;
+    }
+
+    fn max_depth(&self) -> u8 {
+        max_depth_for(self.limit)
     }
 
     fn should_stop(&mut self) -> bool {
-        self.timer
-            .as_deref_mut()
-            .is_some_and(TimeManager::should_stop)
-    }
-}
+        if self.stopped {
+            return true;
+        }
 
-#[cfg(feature = "search-stats")]
-impl SearchObserver for SearchStats {
-    fn root(&mut self) {
-        self.nodes += 1;
-    }
+        if self.deadline.is_none() {
+            return false;
+        }
 
-    fn node(&mut self) {
-        self.nodes += 1;
-    }
+        if self.stats.nodes > 1 && self.stats.nodes % TIME_CHECK_INTERVAL != 0 {
+            return false;
+        }
 
-    fn leaf(&mut self) {
-        self.leaves += 1;
+        self.stop_if_expired()
     }
 
-    fn beta_cutoff(&mut self) {
-        self.beta_cutoffs += 1;
+    fn stop_if_expired(&mut self) -> bool {
+        if self.stopped {
+            return true;
+        }
+
+        let Some(deadline) = self.deadline else {
+            return false;
+        };
+
+        self.stopped = Instant::now() >= deadline;
+        self.stopped
     }
 }
 
 pub struct Search {
     movegen: MoveGenerator,
+    tt: TranspositionTable,
 }
 
 impl Search {
-    pub fn new() -> Self {
+    pub fn new(size_mb: usize) -> Self {
         Self {
             movegen: MoveGenerator::new(),
+            tt: TranspositionTable::new(size_mb),
         }
     }
 
-    pub fn search(&self, board: &mut Board, limit: SearchLimit) -> SearchResult {
-        let mut timer = TimeManager::new(limit);
-        let max_depth = timer.max_depth();
+    pub fn search(&mut self, board: &mut Board, limit: SearchLimit) -> SearchResult {
+        let mut info = SearchInfo::new(limit);
+        let max_depth = info.max_depth();
         let mut best_result = None;
+        let movegen = &self.movegen;
+        let tt = &mut self.tt;
 
         for depth in 1..=max_depth {
-            if depth > 1 && timer.should_stop() {
+            if depth > 1 && info.stop_if_expired() {
                 break;
             }
 
-            let (result, completed) = self.search_depth_timed(board, depth, &mut timer);
+            info.completed_depth = false;
+            let mut result = Self::search_depth_inner(
+                SearchRefs {
+                    board,
+                    movegen,
+                    tt: &mut *tt,
+                },
+                depth,
+                &mut info,
+            );
+            let completed = info.completed_depth;
 
             if completed || best_result.is_none() {
+                if !completed {
+                    result.depth = 0;
+                }
+                result.stats = info.stats;
                 best_result = Some(result);
-            }
-
-            if timer.should_stop() {
-                break;
             }
         }
 
-        best_result.unwrap_or_default()
+        let mut result = best_result.unwrap_or_default();
+        result.stats = info.stats;
+        result
     }
 
-    pub fn search_default(&self, board: &mut Board) -> SearchResult {
-        self.search(board, SearchLimit::Depth(DEFAULT_SEARCH_DEPTH))
-    }
-
-    pub fn search_depth(&self, board: &mut Board, depth: u8) -> SearchResult {
-        let mut observer = NoStats;
-        let mut context = SearchContext::new(&mut observer, None);
-
-        self.search_depth_inner(board, depth, &mut context)
-    }
-
-    #[cfg(feature = "search-stats")]
-    pub fn search_depth_with_stats(
-        &self,
-        board: &mut Board,
-        depth: u8,
-    ) -> (SearchResult, SearchStats) {
-        let mut stats = SearchStats::default();
-        let mut context = SearchContext::new(&mut stats, None);
-        let result = self.search_depth_inner(board, depth, &mut context);
-
-        (result, stats)
-    }
-
-    fn search_depth_timed(
-        &self,
-        board: &mut Board,
-        depth: u8,
-        timer: &mut TimeManager,
-    ) -> (SearchResult, bool) {
-        let mut observer = NoStats;
-        let mut context = SearchContext::new(&mut observer, Some(timer));
-        let result = self.search_depth_inner(board, depth, &mut context);
-
-        let completed = context
-            .timer
-            .as_deref()
-            .is_none_or(|timer| !timer.has_stopped());
-
-        (result, completed)
+    pub fn search_depth(&mut self, board: &mut Board, depth: u8) -> SearchResult {
+        let mut info = SearchInfo::new(SearchLimit::Depth(depth));
+        Self::search_depth_inner(
+            SearchRefs {
+                board,
+                movegen: &self.movegen,
+                tt: &mut self.tt,
+            },
+            depth,
+            &mut info,
+        )
     }
 
     pub fn apply_uci_move(&self, board: &mut Board, uci_move: &str) -> Result<(), String> {
@@ -208,7 +216,7 @@ impl Search {
 
 impl Default for Search {
     fn default() -> Self {
-        Self::new()
+        Self::new(DEFAULT_TT_SIZE_MB)
     }
 }
 
@@ -228,9 +236,9 @@ mod tests {
     #[test]
     fn searches_two_plies_and_returns_a_move() {
         let mut board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         assert!(result.best_move.is_some());
         assert_eq!(board.us(), crate::board::piece::Color::White);
@@ -240,9 +248,9 @@ mod tests {
     #[test]
     fn chooses_free_material_at_depth_two() {
         let mut board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         let best_move = result.best_move.unwrap();
         assert_eq!(best_move.from(), Square::E4);
@@ -253,9 +261,9 @@ mod tests {
     fn finds_move_in_exposed_black_king_position() {
         let mut board =
             Board::from_fen("kr3b1r/p5pp/p1Qp4/3P4/1P6/P1R5/2P2PPP/2K1R3 b - - 2 23").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         assert_eq!(result.best_move.unwrap().to_uci(), "b8b7");
     }
@@ -263,9 +271,9 @@ mod tests {
     #[test]
     fn finds_move_when_only_terrible_moves_are_available() {
         let mut board = Board::from_fen("2R5/7p/1p2pQp1/8/5k2/P7/1P3PPP/4K2R b K - 2 41").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         assert!(result.best_move.is_some());
     }
@@ -274,18 +282,65 @@ mod tests {
     fn iterative_depth_returns_fixed_depth_result() {
         let mut iterative_board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
         let mut fixed_board = iterative_board.clone();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let iterative = search.search(&mut iterative_board, SearchLimit::Depth(3));
         let fixed = search.search_depth(&mut fixed_board, 3);
 
-        assert_eq!(iterative, fixed);
+        assert_eq!(iterative.best_move, fixed.best_move);
+        assert_eq!(iterative.score, fixed.score);
         assert_eq!(iterative_board.history.len(), 0);
     }
 
     #[test]
+    fn search_results_always_include_stats() {
+        let mut default_board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        let mut iterative_board = default_board.clone();
+        let mut fixed_board = default_board.clone();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
+
+        let default = search.search(&mut default_board, default_limit());
+        let iterative = search.search(&mut iterative_board, SearchLimit::Depth(1));
+        let fixed = search.search_depth(&mut fixed_board, 1);
+
+        assert!(default.stats.nodes > 0);
+        assert!(iterative.stats.nodes > 0);
+        assert!(fixed.stats.nodes > 0);
+        assert!(default.stats.qnodes > 0);
+        assert!(iterative.stats.qnodes > 0);
+        assert!(fixed.stats.qnodes > 0);
+    }
+
+    #[test]
+    fn depth_one_search_sees_recapture_in_quiescence() {
+        let mut board = Board::from_fen("4r2k/8/8/4p3/4Q3/8/8/K7 w - - 0 1").unwrap();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
+
+        let result = search.search_depth(&mut board, 1);
+
+        assert_ne!(result.best_move.unwrap().to_uci(), "e4e5");
+        assert!(result.stats.qnodes > 0);
+        assert_eq!(board.history.len(), 0);
+    }
+
+    #[test]
+    fn tactical_positions_search_more_quiescence_nodes_than_quiet_positions() {
+        let mut quiet_board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        let mut tactical_board = Board::from_fen("4r2k/8/8/4p3/4Q3/8/8/K7 w - - 0 1").unwrap();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
+
+        let quiet = search.search_depth(&mut quiet_board, 1);
+        let tactical = search.search_depth(&mut tactical_board, 1);
+
+        assert!(quiet.stats.qnodes > 0);
+        assert!(tactical.stats.qnodes > quiet.stats.qnodes);
+        assert_eq!(quiet_board.history.len(), 0);
+        assert_eq!(tactical_board.history.len(), 0);
+    }
+
+    #[test]
     fn iterative_depth_one_and_two_return_legal_moves() {
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         for depth in [1, 2] {
             let mut board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
@@ -299,7 +354,7 @@ mod tests {
     #[test]
     fn tiny_movetime_returns_without_panicking() {
         let mut board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search(&mut board, SearchLimit::MoveTime(Duration::from_millis(1)));
 
@@ -310,13 +365,13 @@ mod tests {
     #[test]
     fn repeated_root_position_still_returns_a_move() {
         let mut board = Board::from_fen("4k3/8/8/8/8/8/8/4K1N1 w - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         for uci_move in ["g1f3", "e8d8", "f3g1", "d8e8"] {
             search.apply_uci_move(&mut board, uci_move).unwrap();
         }
 
-        let result = search.search_default(&mut board);
+        let result = search.search(&mut board, default_limit());
 
         assert!(result.best_move.is_some());
     }
@@ -326,7 +381,7 @@ mod tests {
         let mut board =
             Board::from_fen("r1bqk1nr/pp1pppbp/2n3p1/2p5/4P3/N5PN/PPPP1PBP/R1BQ1RK1 w - - 18 13")
                 .unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search_depth(&mut board, 1);
 
@@ -336,18 +391,59 @@ mod tests {
     #[test]
     fn checkmate_position_scores_as_loss_for_side_to_move() {
         let mut board = Board::from_fen("7k/6Q1/6K1/8/8/8/8/8 b - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search_depth(&mut board, 1);
 
         assert!(result.best_move.is_none());
-        assert!(result.score < -20_000);
+        assert_eq!(result.score, -30_000);
+    }
+
+    #[test]
+    fn quiescence_detects_capture_mate_at_depth_one() {
+        let mut board = Board::from_fen("7k/6n1/6K1/4Q3/8/8/8/8 w - - 0 1").unwrap();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
+
+        let result = search.search_depth(&mut board, 1);
+
+        assert_eq!(result.best_move.unwrap().to_uci(), "e5g7");
+        assert_eq!(result.score, 29_999);
+        assert_eq!(board.history.len(), 0);
+    }
+
+    #[test]
+    fn mate_scores_prefer_faster_mates() {
+        let mut board = Board::from_fen("7k/6n1/6K1/4Q3/8/8/8/8 w - - 0 1").unwrap();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
+
+        let depth_one = search.search_depth(&mut board, 1);
+        let depth_two = search.search_depth(&mut board, 2);
+
+        assert_eq!(depth_one.score, 29_999);
+        assert!(depth_two.score <= depth_one.score);
+        assert_eq!(board.history.len(), 0);
+    }
+
+    #[test]
+    fn repeated_search_uses_transposition_table() {
+        let mut first_board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
+        let mut second_board = first_board.clone();
+        let mut search = Search::new(1);
+
+        let first = search.search_depth(&mut first_board, 4);
+        let second = search.search_depth(&mut second_board, 4);
+
+        assert_eq!(first.best_move, second.best_move);
+        assert_eq!(first.score, second.score);
+        assert!(second.stats.nodes <= first.stats.nodes);
+        assert_eq!(first_board.history.len(), 0);
+        assert_eq!(second_board.history.len(), 0);
     }
 
     #[test]
     fn stalemate_position_scores_as_draw() {
         let mut board = Board::from_fen("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1").unwrap();
-        let search = Search::new();
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
         let result = search.search_depth(&mut board, 1);
 

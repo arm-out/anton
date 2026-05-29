@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     board::{Board, piece::Color},
-    search::{Search, SearchLimit, default_limit},
+    search::{DEFAULT_TT_SIZE_MB, Search, SearchLimit, default_limit},
     uci::{
         command::{GoCommand, PositionCommand, PositionSource},
         protocol,
@@ -26,7 +26,7 @@ impl Engine {
     pub fn new() -> Self {
         Self {
             board: Board::from_fen(STARTPOS).expect("startpos FEN should be valid"),
-            search: Search::new(),
+            search: Search::new(DEFAULT_TT_SIZE_MB),
             position_source: PositionSource::Startpos,
             played_moves: Vec::new(),
         }

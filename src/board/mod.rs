@@ -62,9 +62,7 @@ impl Board {
 
     // Add a piece to the board at the given square
     pub fn add_piece(&mut self, square: Square, piece: Piece) {
-        self.bitboards[piece.color()][piece.ptype()].set(square);
-        self.occupancy[piece.color()].set(square);
-        self.mailbox[square] = piece;
+        self.add_piece_to_board(square, piece);
         self.state.evaluation.add_piece(square, piece);
         self.state.game_phase += phase_value(piece);
         self.update_hash(square, piece);
@@ -72,9 +70,7 @@ impl Board {
 
     // Remove a piece from the board at the given square
     pub fn remove_piece(&mut self, square: Square, piece: Piece) {
-        self.bitboards[piece.color()][piece.ptype()].clear(square);
-        self.occupancy[piece.color()].clear(square);
-        self.mailbox[square] = Piece::None;
+        self.remove_piece_from_board(square, piece);
         self.state.evaluation.remove_piece(square, piece);
         self.state.game_phase -= phase_value(piece);
         self.update_hash(square, piece);
@@ -83,6 +79,23 @@ impl Board {
     pub fn move_piece(&mut self, from: Square, to: Square, piece: Piece) {
         self.remove_piece(from, piece);
         self.add_piece(to, piece);
+    }
+
+    fn add_piece_to_board(&mut self, square: Square, piece: Piece) {
+        self.bitboards[piece.color()][piece.ptype()].set(square);
+        self.occupancy[piece.color()].set(square);
+        self.mailbox[square] = piece;
+    }
+
+    fn remove_piece_from_board(&mut self, square: Square, piece: Piece) {
+        self.bitboards[piece.color()][piece.ptype()].clear(square);
+        self.occupancy[piece.color()].clear(square);
+        self.mailbox[square] = Piece::None;
+    }
+
+    fn move_piece_on_board(&mut self, from: Square, to: Square, piece: Piece) {
+        self.remove_piece_from_board(from, piece);
+        self.add_piece_to_board(to, piece);
     }
 
     // Side to move
@@ -249,24 +262,19 @@ impl Board {
             return false;
         }
 
+        debug_assert!(self.check_incrementals());
+
         return true;
     }
 
     pub fn unmake(&mut self) {
         let captured = self.state.captured; // Captured Piece
-        let evaluation = self.state.evaluation;
-        let game_phase = self.state.game_phase;
 
         if let Some(state) = self.history.pop() {
             self.state = state;
         } else {
             return;
         }
-
-        let restored_evaluation = self.state.evaluation;
-        let restored_game_phase = self.state.game_phase;
-        self.state.evaluation = evaluation;
-        self.state.game_phase = game_phase;
 
         // Move to undo
         let m = self.state.next_move;
@@ -289,8 +297,7 @@ impl Board {
             MoveType::CastleQueenside => self.unmake_castle(m, false),
         }
 
-        debug_assert_eq!(self.state.evaluation, restored_evaluation);
-        debug_assert_eq!(self.state.game_phase, restored_game_phase);
+        debug_assert!(self.check_incrementals());
     }
 
     pub fn make_quiet(&mut self, m: Move) {
@@ -308,7 +315,7 @@ impl Board {
         let from = m.to();
         let to = m.from();
         let piece = self.get_piece_at(from);
-        self.move_piece(from, to, piece);
+        self.move_piece_on_board(from, to, piece);
     }
 
     pub fn make_capture(&mut self, m: Move) {
@@ -345,8 +352,8 @@ impl Board {
         let from = m.to();
         let to = m.from();
         let piece = self.get_piece_at(from);
-        self.move_piece(from, to, piece);
-        self.add_piece(from, captured);
+        self.move_piece_on_board(from, to, piece);
+        self.add_piece_to_board(from, captured);
     }
 
     pub fn unmake_ep(&mut self, m: Move) {
@@ -358,14 +365,14 @@ impl Board {
             Color::Black => (Piece::BlackPawn, Piece::WhitePawn),
         };
 
-        self.move_piece(from, to, piece);
+        self.move_piece_on_board(from, to, piece);
 
         let captured_idx = match us {
             Color::White => from - 8,
             Color::Black => from + 8,
         };
 
-        self.add_piece(captured_idx, captured);
+        self.add_piece_to_board(captured_idx, captured);
     }
 
     pub fn make_castle(&mut self, m: Move, kingside: bool) {
@@ -387,7 +394,7 @@ impl Board {
             (Color::Black, true) => (Square::F8, Square::H8, Piece::BlackRook),
             (Color::Black, false) => (Square::D8, Square::A8, Piece::BlackRook),
         };
-        self.move_piece(rook_from, rook_to, rook);
+        self.move_piece_on_board(rook_from, rook_to, rook);
     }
 
     pub fn make_promotion(&mut self, m: Move, pt: PieceType, capture: bool) {
@@ -412,8 +419,8 @@ impl Board {
         };
 
         let promo_piece = Piece::from_index(((2 * pt as u8) + us as u8) as usize);
-        self.remove_piece(from, promo_piece);
-        self.add_piece(from, piece);
+        self.remove_piece_from_board(from, promo_piece);
+        self.add_piece_to_board(from, piece);
 
         if captured != Piece::None {
             self.unmake_capture(m, captured);
@@ -515,6 +522,64 @@ impl Board {
             self.state.zobrist_key ^= self.zobrist.en_passant[self.state.en_passant]; // En passant
         }
         self.state.zobrist_key ^= self.zobrist.side_to_move[self.state.active_side]; // Side to move
+    }
+
+    fn zobrist_key_from_scratch(&self) -> u64 {
+        let mut key = 0;
+
+        for (idx, piece) in self.mailbox.iter().enumerate() {
+            if *piece != Piece::None {
+                key ^= self.zobrist.pieces[*piece][idx];
+            }
+        }
+
+        key ^= self.zobrist.castling[self.state.castling_rights];
+
+        if self.state.en_passant != Square::None {
+            key ^= self.zobrist.en_passant[self.state.en_passant];
+        }
+
+        key ^ self.zobrist.side_to_move[self.state.active_side]
+    }
+
+    fn game_phase_from_scratch(&self) -> u8 {
+        self.mailbox.iter().map(|piece| phase_value(*piece)).sum()
+    }
+
+    // Debug function adapted from Rustic's check_incrementals.
+    // https://codeberg.org/mvanthoor/rustic/src/branch/master/rustic/src/board/playmove.rs
+    fn check_incrementals(&self) -> bool {
+        const CHECK_INCREMENTALS: &str = "Check Incrementals";
+        let from_scratch_key = self.zobrist_key_from_scratch();
+        let from_scratch_phase = self.game_phase_from_scratch();
+        let from_scratch_evaluation = Evaluation::new(self);
+        let mut result = true;
+
+        if result && from_scratch_key != self.state.zobrist_key {
+            eprintln!(
+                "{CHECK_INCREMENTALS}: Error in Zobrist key. incremental={} from_scratch={}",
+                self.state.zobrist_key, from_scratch_key
+            );
+            result = false;
+        };
+
+        if result && from_scratch_phase != self.state.game_phase {
+            eprintln!(
+                "{CHECK_INCREMENTALS}: Error in game phase. incremental={} from_scratch={}",
+                self.state.game_phase, from_scratch_phase
+            );
+            result = false;
+        };
+
+        if result && from_scratch_evaluation != self.state.evaluation {
+            eprintln!(
+                "{CHECK_INCREMENTALS}: Error in evaluation. incremental={:?} from_scratch={:?}",
+                self.state.evaluation, from_scratch_evaluation
+            );
+            result = false;
+        };
+
+        result
     }
 }
 

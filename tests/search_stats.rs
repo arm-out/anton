@@ -1,6 +1,7 @@
-#![cfg(feature = "search-stats")]
-
-use anton::{board::Board, search::Search};
+use anton::{
+    board::Board,
+    search::{DEFAULT_TT_SIZE_MB, Search},
+};
 
 struct SearchStatsCase {
     name: &'static str,
@@ -45,14 +46,15 @@ const CASES: &[SearchStatsCase] = &[
 #[test]
 #[ignore]
 fn print_search_stats() {
-    let search = Search::new();
+    let mut search = Search::new(DEFAULT_TT_SIZE_MB);
 
     println!(
-        "{:<18} {:>5} {:>12} {:>12} {:>12} {:>12} {:>10} {:>10} {:>10}",
+        "{:<18} {:>5} {:>12} {:>12} {:>12} {:>12} {:>12} {:>10} {:>10} {:>10}",
         "case",
         "depth",
         "perft",
         "nodes",
+        "qnodes",
         "leaves",
         "cutoffs",
         "searched%",
@@ -62,18 +64,20 @@ fn print_search_stats() {
 
     for case in CASES {
         let mut board = Board::from_fen(case.fen).unwrap();
-        let (_, stats) = search.search_depth_with_stats(&mut board, case.depth);
+        let stats = search.search_depth(&mut board, case.depth).stats;
 
-        let searched_pct = stats.nodes as f64 * 100.0 / case.perft_nodes as f64;
-        let leaf_pct = stats.leaves as f64 * 100.0 / stats.nodes as f64;
-        let cutoff_pct = stats.beta_cutoffs as f64 * 100.0 / stats.nodes as f64;
+        let total_nodes = stats.nodes + stats.qnodes;
+        let searched_pct = total_nodes as f64 * 100.0 / case.perft_nodes as f64;
+        let leaf_pct = stats.leaves as f64 * 100.0 / total_nodes as f64;
+        let cutoff_pct = stats.beta_cutoffs as f64 * 100.0 / total_nodes as f64;
 
         println!(
-            "{:<18} {:>5} {:>12} {:>12} {:>12} {:>12} {:>9.3}% {:>9.3}% {:>9.3}%",
+            "{:<18} {:>5} {:>12} {:>12} {:>12} {:>12} {:>12} {:>9.3}% {:>9.3}% {:>9.3}%",
             case.name,
             case.depth,
             case.perft_nodes,
             stats.nodes,
+            stats.qnodes,
             stats.leaves,
             stats.beta_cutoffs,
             searched_pct,

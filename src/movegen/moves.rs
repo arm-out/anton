@@ -4,7 +4,7 @@ use crate::board::square::Square;
 // 0000  000000      000000
 // FLAGS FROM_SQUARE TO_SQUARE
 // -----------------------------
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Move(pub u16);
 
 // 0101 001001 000000
