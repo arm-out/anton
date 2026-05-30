@@ -3,5 +3,5 @@ ifndef EXE
 endif
 
 openbench:
-    @echo Compiling $(EXE) for OpenBench
-    cargo rustc --release --bin anton -- -C target-cpu=native --emit link=$(EXE)
+	@echo Compiling $(EXE) for OpenBench
+	cargo rustc --release --bin anton -- -C target-cpu=native --emit link=$(EXE)
