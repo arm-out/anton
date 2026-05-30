@@ -16,6 +16,7 @@ pub(super) const ASPIRATION_MAX_WINDOW: Score = INF;
 const DRAW_SCORE: Score = 0;
 const QUIET_MOVE_SCORE: i16 = 0;
 const ROOT_PLY: u8 = 0;
+const REVERSE_FUTILITY_MAX_DEPTH: u8 = 4;
 const REVERSE_FUTILITY_MARGIN: Score = 80;
 
 impl Search {
@@ -158,7 +159,9 @@ impl Search {
             .score(refs.board.us(), refs.board.state.game_phase);
         let in_check = Self::in_check(refs.board, refs.movegen);
 
-        if !in_check
+        // Reverse futility pruning
+        if depth <= REVERSE_FUTILITY_MAX_DEPTH
+            && !in_check
             && !is_mate_score(beta)
             && static_eval.saturating_sub(REVERSE_FUTILITY_MARGIN * depth as Score) >= beta
         {
