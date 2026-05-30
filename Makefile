@@ -4,4 +4,4 @@ endif
 
 openbench:
     @echo Compiling $(EXE) for OpenBench
-    cargo build --release --bin anton -- -C target-cpu=native --emit link=$(EXE)
+    cargo rustc --release --bin anton -- -C target-cpu=native --emit link=$(EXE)
