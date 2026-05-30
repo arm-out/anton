@@ -5,7 +5,7 @@ use crate::{
 };
 
 use super::{
-    Search, SearchInfo, SearchRefs, SearchResult,
+    Search, SearchInfo, SearchRefs, SearchResult, is_mate_score,
     transposition::{Bound, TTEntry},
 };
 
@@ -16,6 +16,8 @@ pub(super) const ASPIRATION_MAX_WINDOW: Score = INF;
 const DRAW_SCORE: Score = 0;
 const QUIET_MOVE_SCORE: i16 = 0;
 const ROOT_PLY: u8 = 0;
+const REVERSE_FUTILITY_MAX_DEPTH: u8 = 3;
+const REVERSE_FUTILITY_MARGIN: Score = 80;
 
 impl Search {
     pub(super) fn search_depth_inner(
@@ -148,6 +150,21 @@ impl Search {
             && let Some(score) = tt_cutoff(entry, depth, alpha, beta, ply)
         {
             return score;
+        }
+
+        let static_eval = refs
+            .board
+            .state
+            .evaluation
+            .score(refs.board.us(), refs.board.state.game_phase);
+        let in_check = Self::in_check(refs.board, refs.movegen);
+
+        if depth <= REVERSE_FUTILITY_MAX_DEPTH
+            && !in_check
+            && !is_mate_score(beta)
+            && static_eval.saturating_sub(REVERSE_FUTILITY_MARGIN * depth as Score) >= beta
+        {
+            return static_eval;
         }
 
         let tt_move = tt_entry.map(|entry| entry.best_move());
