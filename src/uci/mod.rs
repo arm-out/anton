@@ -36,8 +36,8 @@ fn spawn_command_thread(
 
             let command = match command::parse_command(&line) {
                 Ok(command) => command,
-                Err(err) => {
-                    eprintln!("invalid UCI command: {err:?}");
+                Err(_) => {
+                    eprintln!("invalid UCI command: {line}");
                     continue;
                 }
             };
