@@ -14,24 +14,24 @@ struct SearchPosition {
 
 const POSITIONS: &[SearchPosition] = &[
     SearchPosition {
-        name: "startpos_d4",
+        name: "startpos_d6",
         fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        depth: 4,
+        depth: 6,
     },
     SearchPosition {
-        name: "kiwipete_d3",
+        name: "kiwipete_d4",
         fen: "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
-        depth: 3,
-    },
-    SearchPosition {
-        name: "tactical_d4",
-        fen: "4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1",
         depth: 4,
     },
     SearchPosition {
-        name: "endgame_d5",
+        name: "tactical_d6",
+        fen: "4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1",
+        depth: 6,
+    },
+    SearchPosition {
+        name: "endgame_d6",
         fen: "8/8/8/3k4/8/4K3/8/8 w - - 0 1",
-        depth: 5,
+        depth: 6,
     },
 ];
 
@@ -71,7 +71,8 @@ fn bench_search(c: &mut Criterion) {
             b.iter(|| {
                 let mut board = template.clone();
                 let mut search = Search::new(DEFAULT_TT_SIZE_MB);
-                let result = search.search_depth(&mut board, black_box(position.depth));
+                let result =
+                    search.search(&mut board, black_box(SearchLimit::Depth(position.depth)));
                 let stats = result.stats;
 
                 assert!(result.best_move.is_some());
