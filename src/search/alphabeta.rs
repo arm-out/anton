@@ -17,7 +17,7 @@ const DRAW_SCORE: Score = 0;
 const QUIET_MOVE_SCORE: i16 = 0;
 const ROOT_PLY: u8 = 0;
 const REVERSE_FUTILITY_MAX_DEPTH: u8 = 4;
-const REVERSE_FUTILITY_MARGIN: Score = 80;
+const REVERSE_FUTILITY_MARGIN: Score = 100;
 
 impl Search {
     pub(super) fn search_depth_inner(
