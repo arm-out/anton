@@ -27,6 +27,16 @@ Ptnml(0-2): [46, 108, 242, 159, 108], WL/DD Ratio: 4.26
 LLR: 2.95 (100.3%) (-2.94, 2.94) [0.00, 5.00]
 ```
 
+- Added RFP for depth <= 3 with a margin of 80 \* depth
+
+```
+Elo   | 89.24 +- 30.45 (95%)
+SPRT  | 20.0+0.20s Threads=1 Hash=256MB
+LLR   | 2.95 (-2.94, 2.94) [0.00, 10.00]
+Games | N: 374 W: 196 L: 102 D: 76
+Penta | [10, 19, 68, 47, 43]
+```
+
 ### Fixed
 
 - Benchmark tests now use iterative deepening
