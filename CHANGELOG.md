@@ -2,6 +2,15 @@
 
 ### Regression
 
+```
+Results of Anton v0.5.0 vs Anton v0.4.1 (20+0.2, 1t - NULL, 256MB - NULL, UHO_Lichess_4852_v1.epd):
+Elo: 55.12 +/- 24.05, nElo: 62.74 +/- 26.88
+LOS: 100.00 %, DrawRatio: 35.51 %, PairsRatio: 1.92
+Games: 642, Wins: 308, Losses: 207, Draws: 127, Points: 371.5 (57.87 %)
+Ptnml(0-2): [34, 37, 114, 66, 70], WL/DD Ratio: 8.50
+LLR: 2.95 (100.3%) (-2.94, 2.94) [0.00, 10.00]
+```
+
 ### Performance
 
 - Added PVS to all non root nodes
