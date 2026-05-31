@@ -10,9 +10,12 @@ use crate::{
     movegen::{MoveGenerator, moves::Move},
 };
 
-use self::time::{TIME_CHECK_INTERVAL, deadline_for, max_depth_for};
 pub use self::transposition::DEFAULT_TT_SIZE_MB;
 use self::transposition::TranspositionTable;
+use self::{
+    alphabeta::{ASPIRATION_MAX_WINDOW, ASPIRATION_WINDOW, INF, MATE_SCORE},
+    time::{TIME_CHECK_INTERVAL, deadline_for, max_depth_for},
+};
 
 const DEFAULT_SEARCH_DEPTH: u8 = 5;
 const MAX_SEARCH_DEPTH: u8 = u8::MAX;
@@ -140,6 +143,7 @@ impl Search {
         let mut info = SearchInfo::new(limit);
         let max_depth = info.max_depth();
         let mut best_result = None;
+        let mut last_score = 0;
         let movegen = &self.movegen;
         let tt = &mut self.tt;
 
@@ -148,24 +152,50 @@ impl Search {
                 break;
             }
 
-            info.completed_depth = false;
-            let mut result = Self::search_depth_inner(
-                SearchRefs {
-                    board,
-                    movegen,
-                    tt: &mut *tt,
-                },
-                depth,
-                &mut info,
-            );
-            let completed = info.completed_depth;
+            let (mut a_window, mut b_window) = (ASPIRATION_WINDOW, ASPIRATION_MAX_WINDOW);
+            let (mut alpha, mut beta) = aspiration_bounds(depth, last_score, a_window, b_window);
 
-            if completed || best_result.is_none() {
+            // Widen window until score within bounds
+            loop {
+                info.completed_depth = false;
+                let mut result = Self::search_depth_inner(
+                    SearchRefs {
+                        board,
+                        movegen,
+                        tt: &mut *tt,
+                    },
+                    depth,
+                    alpha,
+                    beta,
+                    &mut info,
+                );
+                let completed = info.completed_depth;
+
                 if !completed {
-                    result.depth = 0;
+                    if best_result.is_none() {
+                        result.depth = 0;
+                        result.stats = info.stats;
+                        best_result = Some(result);
+                    }
+                    break;
                 }
+
+                if result.score <= alpha {
+                    a_window = a_window.saturating_mul(2);
+                    alpha = clamp_score(result.score.saturating_sub(a_window));
+                    continue;
+                }
+
+                if result.score >= beta {
+                    b_window = b_window.saturating_mul(2);
+                    beta = clamp_score(result.score.saturating_add(b_window));
+                    continue;
+                }
+
+                last_score = result.score;
                 result.stats = info.stats;
                 best_result = Some(result);
+                break;
             }
         }
 
@@ -183,6 +213,8 @@ impl Search {
                 tt: &mut self.tt,
             },
             depth,
+            -INF,
+            INF,
             &mut info,
         )
     }
@@ -226,6 +258,30 @@ pub fn default_limit() -> SearchLimit {
 
 fn infinite_depth() -> u8 {
     MAX_SEARCH_DEPTH
+}
+
+fn aspiration_bounds(
+    depth: u8,
+    last_score: Score,
+    a_window: Score,
+    b_window: Score,
+) -> (Score, Score) {
+    if depth <= 1 || is_mate_score(last_score) {
+        (-INF, INF)
+    } else {
+        (
+            clamp_score(last_score.saturating_sub(a_window)),
+            clamp_score(last_score.saturating_add(b_window)),
+        )
+    }
+}
+
+fn clamp_score(score: Score) -> Score {
+    score.clamp(-INF, INF)
+}
+
+fn is_mate_score(score: Score) -> bool {
+    score > MATE_SCORE - 256 || score < -MATE_SCORE + 256
 }
 
 #[cfg(test)]

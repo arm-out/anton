@@ -36,8 +36,8 @@ fn spawn_command_thread(
 
             let command = match command::parse_command(&line) {
                 Ok(command) => command,
-                Err(err) => {
-                    eprintln!("invalid UCI command: {err:?}");
+                Err(_) => {
+                    eprintln!("invalid UCI command: {line}");
                     continue;
                 }
             };
@@ -47,7 +47,6 @@ fn spawn_command_thread(
                 command::UCICommand::Uci => {
                     if send_output(&output_tx, protocol::id_name())
                         || send_output(&output_tx, protocol::id_author())
-                        || send_output(&output_tx, protocol::uci_ok())
                         || send_output(
                             &output_tx,
                             "option name Threads type spin default 1 min 1 max 1",
@@ -56,6 +55,7 @@ fn spawn_command_thread(
                             &output_tx,
                             "option name Hash type spin default 256 min 256 max 256",
                         )
+                        || send_output(&output_tx, protocol::uci_ok())
                     {
                         break;
                     }
