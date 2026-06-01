@@ -52,6 +52,7 @@ fn split_fen_str(fen: Option<&str>) -> Result<Vec<String>, FenError> {
         None => FEN_DEFAULT,
     }
     .replace(EM_DASH, DASH)
+    .trim()
     .split(SEPARATOR)
     .map(|s| s.to_string())
     .collect();
@@ -239,6 +240,19 @@ mod tests {
     #[test]
     fn test_split_fen_str_short() {
         let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -";
+        let fen_parts = split_fen_str(Some(fen)).unwrap();
+        assert_eq!(fen_parts.len(), 6);
+        assert_eq!(fen_parts[0], "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");
+        assert_eq!(fen_parts[1], "w");
+        assert_eq!(fen_parts[2], "KQkq");
+        assert_eq!(fen_parts[3], "-");
+        assert_eq!(fen_parts[4], "0");
+        assert_eq!(fen_parts[5], "1");
+    }
+
+    #[test]
+    fn test_split_fen_str_trims_surrounding_whitespace() {
+        let fen = " rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1 ";
         let fen_parts = split_fen_str(Some(fen)).unwrap();
         assert_eq!(fen_parts.len(), 6);
         assert_eq!(fen_parts[0], "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR");

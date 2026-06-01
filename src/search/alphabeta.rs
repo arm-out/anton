@@ -5,20 +5,26 @@ use crate::{
 };
 
 use super::{
-    Search, SearchInfo, SearchRefs, SearchResult,
+    Search, SearchInfo, SearchRefs, SearchResult, is_mate_score,
     transposition::{Bound, TTEntry},
 };
 
-const INF: Score = Score::MAX;
-const MATE_SCORE: Score = 30_000;
+pub(super) const INF: Score = Score::MAX;
+pub(super) const MATE_SCORE: Score = 30_000;
+pub(super) const ASPIRATION_WINDOW: Score = 50;
+pub(super) const ASPIRATION_MAX_WINDOW: Score = INF;
 const DRAW_SCORE: Score = 0;
 const QUIET_MOVE_SCORE: i16 = 0;
 const ROOT_PLY: u8 = 0;
+const REVERSE_FUTILITY_MAX_DEPTH: u8 = 3;
+const REVERSE_FUTILITY_MARGIN: Score = 80;
 
 impl Search {
     pub(super) fn search_depth_inner(
         mut refs: SearchRefs<'_>,
         depth: u8,
+        alpha: Score,
+        beta: Score,
         info: &mut SearchInfo,
     ) -> SearchResult {
         info.root();
@@ -38,8 +44,8 @@ impl Search {
         let tt_move = refs.tt.probe(key).map(|entry| entry.best_move());
         let mut best_move = None;
         let mut best_score = -INF;
-        let mut alpha = -INF;
-        let beta = INF;
+        let original_alpha = alpha;
+        let mut alpha = alpha;
         let mut moves = refs.movegen.gen_moves(refs.board);
         moves.score_moves(refs.board, tt_move);
         let mut legal_moves = 0;
@@ -72,17 +78,30 @@ impl Search {
             }
 
             alpha = alpha.max(score);
+
+            if alpha >= beta {
+                info.beta_cutoff();
+                break;
+            }
         }
 
         if legal_moves == 0 {
             best_score = Self::terminal_score(refs.board, refs.movegen, ROOT_PLY);
         } else if info.completed_depth || !info.stopped {
+            let bound = if best_score <= original_alpha {
+                Bound::Upper
+            } else if best_score >= beta {
+                Bound::Lower
+            } else {
+                Bound::Exact
+            };
+
             refs.tt.store(
                 key,
                 best_move.unwrap(),
                 score_to_tt(best_score, ROOT_PLY),
                 depth,
-                Bound::Exact,
+                bound,
             );
         }
 
@@ -133,6 +152,21 @@ impl Search {
             return score;
         }
 
+        let static_eval = refs
+            .board
+            .state
+            .evaluation
+            .score(refs.board.us(), refs.board.state.game_phase);
+        let in_check = Self::in_check(refs.board, refs.movegen);
+
+        if depth <= REVERSE_FUTILITY_MAX_DEPTH
+            && !in_check
+            && !is_mate_score(beta)
+            && static_eval.saturating_sub(REVERSE_FUTILITY_MARGIN * depth as Score) >= beta
+        {
+            return static_eval;
+        }
+
         let tt_move = tt_entry.map(|entry| entry.best_move());
         let mut best_move = None;
         let mut best_score = -INF;
@@ -152,7 +186,19 @@ impl Search {
             }
 
             legal_moves += 1;
-            let score = -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info);
+
+            // PVS search
+            let mut score = if legal_moves == 1 {
+                -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info)
+            } else {
+                let null_beta = alpha.saturating_add(1);
+                -Self::negamax(refs, depth - 1, -null_beta, -alpha, ply + 1, info)
+            };
+
+            // Null window fail -> search with full window
+            if legal_moves > 1 && score > alpha && score < beta {
+                score = -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info);
+            }
             refs.board.unmake();
 
             if best_move.is_none() || score > best_score {
@@ -337,6 +383,7 @@ fn score_from_tt(score: Score, ply: u8) -> Score {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::search::{DEFAULT_TT_SIZE_MB, SearchLimit};
     use crate::{
         board::square::Square,
         movegen::moves::{Move, MoveType},
@@ -389,5 +436,51 @@ mod tests {
 
         assert_eq!(score_from_tt(stored, 1), 29_999);
         assert_eq!(score_from_tt(stored, 5), 29_995);
+    }
+
+    #[test]
+    fn root_fail_high_stores_lower_tt_bound() {
+        let mut board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        let key = board.state.zobrist_key;
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
+        let mut info = SearchInfo::new(SearchLimit::Depth(1));
+
+        let result = Search::search_depth_inner(
+            SearchRefs {
+                board: &mut board,
+                movegen: &search.movegen,
+                tt: &mut search.tt,
+            },
+            1,
+            -10_001,
+            -10_000,
+            &mut info,
+        );
+
+        assert!(result.score >= -10_000);
+        assert_eq!(search.tt.probe(key).unwrap().bound(), Bound::Lower);
+    }
+
+    #[test]
+    fn root_fail_low_stores_upper_tt_bound() {
+        let mut board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        let key = board.state.zobrist_key;
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
+        let mut info = SearchInfo::new(SearchLimit::Depth(1));
+
+        let result = Search::search_depth_inner(
+            SearchRefs {
+                board: &mut board,
+                movegen: &search.movegen,
+                tt: &mut search.tt,
+            },
+            1,
+            10_000,
+            10_001,
+            &mut info,
+        );
+
+        assert!(result.score <= 10_000);
+        assert_eq!(search.tt.probe(key).unwrap().bound(), Bound::Upper);
     }
 }
