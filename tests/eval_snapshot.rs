@@ -1,4 +1,4 @@
-use anton::board::{Board, piece::Color};
+use anton::{board::{Board, piece::Color}, evaluation::evaluate_static};
 
 fn color_name(color: Color) -> &'static str {
     match color {
@@ -18,10 +18,7 @@ fn print_12move_evaluations() {
     for (idx, fen) in include_str!("12move.epd").lines().enumerate() {
         let board = Board::from_fen(fen)
             .unwrap_or_else(|err| panic!("Invalid FEN on line {}: {err}", idx + 1));
-        let eval = board
-            .state
-            .evaluation
-            .score(board.state.active_side, board.state.game_phase);
+        let eval = evaluate_static(&board);
 
         println!(
             "{:<4} {:<5} {:>5} {:>6}  {}",
