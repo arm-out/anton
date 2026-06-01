@@ -227,6 +227,32 @@ mod tests {
     }
 
     #[test]
+    fn tapered_trace_features_match_white_pov_eval() {
+        let board = Board::from_fen("4kq2/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let mut trace = FeatureVectorTrace::new();
+        let mut no_trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        evaluate(&board, &EVAL_PARAMS, &mut trace);
+
+        let eval = evaluate_side(&board, &mut ctx, Color::White, &EVAL_PARAMS, &mut no_trace)
+            - evaluate_side(&board, &mut ctx, Color::Black, &EVAL_PARAMS, &mut no_trace);
+        let phase = board.state.game_phase.min(MAX_GAME_PHASE) as f64;
+        let expected = (eval.mg as f64 * phase
+            + eval.eg as f64 * (MAX_GAME_PHASE as f64 - phase))
+            / MAX_GAME_PHASE as f64;
+        let weights = EVAL_PARAMS.weights();
+        let actual = trace
+            .tapered_features(board.state.game_phase)
+            .iter()
+            .zip(weights)
+            .map(|(feature, weight)| feature * weight as f64)
+            .sum::<f64>();
+
+        assert!((actual - expected).abs() < f64::EPSILON);
+    }
+
+    #[test]
     fn tracks_evaluation_through_make_and_unmake() {
         let mut board = Board::from_fen("8/8/8/3n4/4B3/8/8/4K2k w - - 0 1").unwrap();
         let initial_evaluation = board.state.evaluation;

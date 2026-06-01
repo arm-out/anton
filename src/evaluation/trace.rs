@@ -1,7 +1,7 @@
 use crate::board::piece::{Color, PieceType};
 
 use super::{
-    EvalValue,
+    EvalValue, MAX_GAME_PHASE,
     params::{
         material_eg_weight_idx, material_mg_weight_idx, psqt_eg_weight_idx, psqt_mg_weight_idx,
     },
@@ -69,6 +69,27 @@ impl FeatureVectorTrace {
     pub fn psqt_feature(&self, ptype: PieceType, psqt_idx: usize) -> EvalValue {
         self.features[EvalTerm::Psqt(ptype, psqt_idx).mg_feature_idx()]
     }
+
+    pub fn tapered_features(&self, game_phase: u8) -> Vec<f64> {
+        let phase = game_phase.min(MAX_GAME_PHASE) as f64;
+        let max_phase = MAX_GAME_PHASE as f64;
+        let mg_scale = phase / max_phase;
+        let eg_scale = (max_phase - phase) / max_phase;
+
+        self.features
+            .iter()
+            .enumerate()
+            .map(|(idx, &count)| {
+                let scale = if is_mg_feature_idx(idx) {
+                    mg_scale
+                } else {
+                    eg_scale
+                };
+
+                count as f64 * scale
+            })
+            .collect()
+    }
 }
 
 impl Trace for FeatureVectorTrace {
@@ -84,4 +105,9 @@ fn trace_sign(side: Color) -> EvalValue {
         Color::White => 1,
         Color::Black => -1,
     }
+}
+
+fn is_mg_feature_idx(idx: usize) -> bool {
+    idx < material_eg_weight_idx(0)
+        || (psqt_mg_weight_idx(0, 0)..psqt_eg_weight_idx(0, 0)).contains(&idx)
 }
