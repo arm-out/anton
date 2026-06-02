@@ -6,6 +6,7 @@ use std::{
     io::{self, BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     process,
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -28,6 +29,7 @@ const DEFAULT_MIN_DELTA: f64 = 0.0000001;
 const DEFAULT_ADAGRAD_EPS: f64 = 1e-8;
 const DEFAULT_BATCH_SIZE: usize = 65_536;
 const DEFAULT_LR_LIST: &[f64] = &[0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0];
+static TERMINATE_AFTER_EPOCH: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct WeightCategory {
@@ -176,6 +178,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
+    install_termination_handler();
     let command = parse_args(env::args().skip(1).collect())?;
 
     match command {
@@ -307,6 +310,32 @@ fn run() -> Result<(), String> {
     }
 
     Ok(())
+}
+
+#[cfg(unix)]
+fn install_termination_handler() {
+    const SIGINT: i32 = 2;
+    const SIGTERM: i32 = 15;
+
+    unsafe extern "C" {
+        fn signal(signum: i32, handler: extern "C" fn(i32)) -> usize;
+    }
+
+    extern "C" fn handler(_signum: i32) {
+        TERMINATE_AFTER_EPOCH.store(true, Ordering::SeqCst);
+    }
+
+    unsafe {
+        signal(SIGINT, handler);
+        signal(SIGTERM, handler);
+    }
+}
+
+#[cfg(not(unix))]
+fn install_termination_handler() {}
+
+fn termination_requested() -> bool {
+    TERMINATE_AFTER_EPOCH.load(Ordering::SeqCst)
 }
 
 fn parse_args(args: Vec<String>) -> Result<Command, String> {
@@ -1073,6 +1102,10 @@ fn tune(
             if stale_epochs >= patience {
                 break;
             }
+        }
+        if termination_requested() {
+            eprintln!("termination requested; stopping after epoch {epoch}");
+            break;
         }
     }
 
