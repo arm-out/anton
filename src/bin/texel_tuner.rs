@@ -30,6 +30,29 @@ const DEFAULT_BATCH_SIZE: usize = 65_536;
 const DEFAULT_LR_LIST: &[f64] = &[0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct WeightCategory {
+    name: &'static str,
+    shape: (usize, usize),
+}
+
+const WEIGHT_LAYOUT: &[WeightCategory] = &[
+    WeightCategory { name: "material mg", shape: (1, 6) },
+    WeightCategory { name: "material eg", shape: (1, 6) },
+    WeightCategory { name: "pawn psqt mg", shape: (8, 8) },
+    WeightCategory { name: "knight psqt mg", shape: (8, 8) },
+    WeightCategory { name: "bishop psqt mg", shape: (8, 8) },
+    WeightCategory { name: "rook psqt mg", shape: (8, 8) },
+    WeightCategory { name: "queen psqt mg", shape: (8, 8) },
+    WeightCategory { name: "king psqt mg", shape: (8, 8) },
+    WeightCategory { name: "pawn psqt eg", shape: (8, 8) },
+    WeightCategory { name: "knight psqt eg", shape: (8, 8) },
+    WeightCategory { name: "bishop psqt eg", shape: (8, 8) },
+    WeightCategory { name: "rook psqt eg", shape: (8, 8) },
+    WeightCategory { name: "queen psqt eg", shape: (8, 8) },
+    WeightCategory { name: "king psqt eg", shape: (8, 8) },
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Split {
     Train,
     Validation,
@@ -1092,20 +1115,50 @@ fn write_weights(
         header.validation_percent,
         header.seed,
     ));
+    output.push_str("#[rustfmt::skip]\n");
     output.push_str(&format!(
         "pub const WEIGHTS: [EvalValue; {}] = [\n",
         result.weights.len()
     ));
-    for chunk in result.weights.chunks(8) {
+    push_weight_layout(&mut output, &result.weights)?;
+    output.push_str("];\n\n");
+    output.push_str(&format!("pub const WEIGHT_COUNT: usize = WEIGHTS.len();\n"));
+    fs::write(path, output).map_err(|err| format!("failed to write weights: {err}"))
+}
+
+fn push_weight_layout(output: &mut String, weights: &[f64]) -> Result<(), String> {
+    let expected = WEIGHT_LAYOUT
+        .iter()
+        .map(|category| category.shape.0 * category.shape.1)
+        .sum::<usize>();
+    if expected != weights.len() {
+        return Err(format!(
+            "weight layout size {expected} does not match weight count {}",
+            weights.len()
+        ));
+    }
+
+    let mut offset = 0;
+    for category in WEIGHT_LAYOUT {
+        let len = category.shape.0 * category.shape.1;
+        push_weight_block(output, category, &weights[offset..offset + len]);
+        offset += len;
+    }
+
+    Ok(())
+}
+
+fn push_weight_block(output: &mut String, category: &WeightCategory, weights: &[f64]) {
+    output.push_str(&format!("    // {}\n", category.name));
+    for row in 0..category.shape.0 {
         output.push_str("    ");
-        for weight in chunk {
+        let start = row * category.shape.1;
+        for weight in &weights[start..start + category.shape.1] {
             output.push_str(&format!("{:>6},", round_weight(*weight)));
         }
         output.push('\n');
     }
-    output.push_str("];\n\n");
-    output.push_str(&format!("pub const WEIGHT_COUNT: usize = WEIGHTS.len();\n"));
-    fs::write(path, output).map_err(|err| format!("failed to write weights: {err}"))
+    output.push('\n');
 }
 
 fn round_weight(weight: f64) -> EvalValue {
@@ -1352,6 +1405,18 @@ mod tests {
         };
         assert_eq!(result.best_epoch, 2);
         assert_eq!(round_weight(result.weights[0]), 3);
+    }
+
+    #[test]
+    fn weight_block_formatter_adds_category_comment() {
+        let mut output = String::new();
+        let category = WeightCategory {
+            name: "material mg",
+            shape: (1, 2),
+        };
+        push_weight_block(&mut output, &category, &[1.2, -2.6]);
+        assert!(output.contains("// material mg"));
+        assert!(output.contains("     1,    -3,"));
     }
 
     #[test]
