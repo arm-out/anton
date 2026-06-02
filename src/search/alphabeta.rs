@@ -1,6 +1,6 @@
 use crate::{
     board::{Board, piece::PieceType, square::Square},
-    evaluation::Score,
+    evaluation::{Score, evaluate_static},
     movegen::MoveGenerator,
 };
 
@@ -135,11 +135,7 @@ impl Search {
         }
 
         if info.should_stop() {
-            return refs
-                .board
-                .state
-                .evaluation
-                .score(refs.board.us(), refs.board.state.game_phase);
+            return evaluate_static(refs.board);
         }
 
         let key = refs.board.state.zobrist_key;
@@ -152,11 +148,7 @@ impl Search {
             return score;
         }
 
-        let static_eval = refs
-            .board
-            .state
-            .evaluation
-            .score(refs.board.us(), refs.board.state.game_phase);
+        let static_eval = evaluate_static(refs.board);
         let in_check = Self::in_check(refs.board, refs.movegen);
 
         if depth <= REVERSE_FUTILITY_MAX_DEPTH
@@ -254,11 +246,7 @@ impl Search {
         }
 
         let in_check = Self::in_check(refs.board, refs.movegen);
-        let stand_pat = refs
-            .board
-            .state
-            .evaluation
-            .score(refs.board.us(), refs.board.state.game_phase);
+        let stand_pat = evaluate_static(refs.board);
 
         if info.should_stop() {
             info.leaf();

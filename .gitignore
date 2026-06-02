@@ -2,5 +2,10 @@
 */target/
 structure.md
 notes.md
-.DS_Store
 eval.md
+Tuning.pdf
+k_report.txt
+lr_report.txt
+tuned_weights.rs
+data/
+.DS_Store

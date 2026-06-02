@@ -1,3 +1,25 @@
+## v0.6.0
+
+### Regression
+
+### Performance
+
+- Tuned material and piece square tables
+
+```
+Elo   | 62.17 +- 26.63 (95%)
+SPRT  | 10.0+0.10s Threads=1 Hash=256MB
+LLR   | 3.00 (-2.94, 2.94) [0.00, 10.00]
+Games | N: 610 W: 320 L: 212 D: 78
+Penta | [40, 21, 116, 47, 81]
+```
+
+### Misc
+
+- Texel tuner based on Adam Grant's Ethereal tuner using AdaGrad descent
+- Refactored eval code
+- Github action to generate OpenBench stats for commits
+
 ## v0.5.0
 
 ### Regression
