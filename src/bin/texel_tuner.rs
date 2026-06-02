@@ -38,22 +38,70 @@ struct WeightCategory {
 }
 
 const WEIGHT_LAYOUT: &[WeightCategory] = &[
-    WeightCategory { name: "material mg", shape: (1, 6) },
-    WeightCategory { name: "material eg", shape: (1, 6) },
-    WeightCategory { name: "pawn psqt mg", shape: (8, 8) },
-    WeightCategory { name: "knight psqt mg", shape: (8, 8) },
-    WeightCategory { name: "bishop psqt mg", shape: (8, 8) },
-    WeightCategory { name: "rook psqt mg", shape: (8, 8) },
-    WeightCategory { name: "queen psqt mg", shape: (8, 8) },
-    WeightCategory { name: "king psqt mg", shape: (8, 8) },
-    WeightCategory { name: "pawn psqt eg", shape: (8, 8) },
-    WeightCategory { name: "knight psqt eg", shape: (8, 8) },
-    WeightCategory { name: "bishop psqt eg", shape: (8, 8) },
-    WeightCategory { name: "rook psqt eg", shape: (8, 8) },
-    WeightCategory { name: "queen psqt eg", shape: (8, 8) },
-    WeightCategory { name: "king psqt eg", shape: (8, 8) },
-    WeightCategory { name: "isolated pawn mg", shape: (1, 8) },
-    WeightCategory { name: "isolated pawn eg", shape: (1, 8) },
+    WeightCategory {
+        name: "material mg",
+        shape: (1, 6),
+    },
+    WeightCategory {
+        name: "material eg",
+        shape: (1, 6),
+    },
+    WeightCategory {
+        name: "pawn psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "knight psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "bishop psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "rook psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "queen psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "king psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "pawn psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "knight psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "bishop psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "rook psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "queen psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "king psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "isolated pawn mg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "isolated pawn eg",
+        shape: (1, 8),
+    },
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1415,10 +1463,8 @@ mod tests {
 
     #[test]
     fn parses_decimal_win_loss_results() {
-        let win =
-            parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 [1.0] 42").unwrap();
-        let loss =
-            parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 [0.0] -42").unwrap();
+        let win = parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 [1.0] 42").unwrap();
+        let loss = parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 [0.0] -42").unwrap();
         assert_eq!(win.result, 1.0);
         assert_eq!(loss.result, 0.0);
     }
