@@ -33,6 +33,8 @@ impl EvalTerm {
 }
 
 pub trait Trace {
+    const USE_INCREMENTAL_EVAL: bool = false;
+
     fn term(&mut self, side: Color, term: EvalTerm, count: EvalValue);
 }
 
@@ -40,6 +42,8 @@ pub trait Trace {
 pub struct NoTrace;
 
 impl Trace for NoTrace {
+    const USE_INCREMENTAL_EVAL: bool = true;
+
     #[inline(always)]
     fn term(&mut self, _side: Color, _term: EvalTerm, _count: EvalValue) {}
 }

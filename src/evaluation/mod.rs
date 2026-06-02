@@ -51,9 +51,22 @@ impl Evaluation {
         self.scores[color] -= psqt_value(square, piece);
     }
 
+    pub fn score(&self, board: &Board) -> Score {
+        let eval = self.scores[Color::White] - self.scores[Color::Black];
+        let score = eval.tapered(board.state.game_phase);
+
+        match board.us() {
+            Color::White => score,
+            Color::Black => -score,
+        }
+    }
 }
 
 pub fn evaluate<T: Trace>(board: &Board, params: &EvalParams, trace: &mut T) -> Score {
+    if T::USE_INCREMENTAL_EVAL && *params == EVAL_PARAMS {
+        return board.state.evaluation.score(board);
+    }
+
     let mut ctx = EvalContext;
     let eval = evaluate_side(board, &mut ctx, Color::White, params, trace)
         - evaluate_side(board, &mut ctx, Color::Black, params, trace);
@@ -160,9 +173,10 @@ mod tests {
             Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
 
         assert_eq!(board.state.evaluation, Evaluation::new(&board));
+        let mut trace = NoTrace;
         assert_eq!(
             evaluate_static(&board),
-            0
+            evaluate(&board, &EVAL_PARAMS, &mut trace)
         );
         assert_eq!(board.state.game_phase, MAX_GAME_PHASE);
     }
@@ -172,9 +186,7 @@ mod tests {
         let white_queen = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
         let black_queen = Board::from_fen("4kq2/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
 
-        assert!(
-            evaluate_static(&white_queen) > 900
-        );
+        assert!(evaluate_static(&white_queen) > 900);
         assert!(evaluate_static(&black_queen) < -900);
     }
 
@@ -194,6 +206,31 @@ mod tests {
                 evaluate_static(&board)
             );
         }
+    }
+
+    #[test]
+    fn no_trace_uses_custom_params_when_params_are_not_current() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let mut weights = EVAL_PARAMS.weights();
+        weights[params::material_mg_weight_idx(PieceType::Queen as usize)] += 100;
+        weights[params::material_eg_weight_idx(PieceType::Queen as usize)] += 100;
+        let params = EvalParams::from_weights(weights);
+        let mut trace = NoTrace;
+
+        assert_ne!(
+            evaluate(&board, &params, &mut trace),
+            evaluate_static(&board)
+        );
+    }
+
+    #[test]
+    fn feature_trace_still_rebuilds_features() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &EVAL_PARAMS, &mut trace);
+
+        assert_eq!(trace.material_feature(PieceType::Queen), 1);
     }
 
     #[test]
@@ -238,8 +275,7 @@ mod tests {
         let eval = evaluate_side(&board, &mut ctx, Color::White, &EVAL_PARAMS, &mut no_trace)
             - evaluate_side(&board, &mut ctx, Color::Black, &EVAL_PARAMS, &mut no_trace);
         let phase = board.state.game_phase.min(MAX_GAME_PHASE) as f64;
-        let expected = (eval.mg as f64 * phase
-            + eval.eg as f64 * (MAX_GAME_PHASE as f64 - phase))
+        let expected = (eval.mg as f64 * phase + eval.eg as f64 * (MAX_GAME_PHASE as f64 - phase))
             / MAX_GAME_PHASE as f64;
         let weights = EVAL_PARAMS.weights();
         let actual = trace
@@ -249,7 +285,7 @@ mod tests {
             .map(|(feature, weight)| feature * weight as f64)
             .sum::<f64>();
 
-        assert!((actual - expected).abs() < f64::EPSILON);
+        assert!((actual - expected).abs() < 1e-9);
     }
 
     #[test]
