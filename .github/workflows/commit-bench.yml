@@ -1,0 +1,52 @@
+name: commit bench
+
+on:
+    push:
+
+permissions:
+    contents: read
+    statuses: write
+
+jobs:
+    bench:
+        name: Commit bench
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+
+            - name: Run engine benchmark
+              id: bench
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  output="$(cargo run --bin anton bench --ci)"
+                  printf '%s\n' "$output"
+
+                  line="$(printf '%s\n' "$output" | grep -v '^$' | tail -n 1)"
+                  if [[ -z "$line" ]]; then
+                      echo "benchmark did not produce stdout" >&2
+                      exit 1
+                  fi
+
+                  echo "line=$line" >> "$GITHUB_OUTPUT"
+                  echo "### Commit benchmark" >> "$GITHUB_STEP_SUMMARY"
+                  echo "$line" >> "$GITHUB_STEP_SUMMARY"
+
+            - name: Add benchmark commit status
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  REPO: ${{ github.repository }}
+                  SHA: ${{ github.sha }}
+                  LINE: ${{ steps.bench.outputs.line }}
+              shell: bash
+              run: |
+                  gh api "repos/${REPO}/statuses/${SHA}" \
+                      --method POST \
+                      --field state=success \
+                      --field context=commit-bench \
+                      --field description="${LINE}" \
+                      --field target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
