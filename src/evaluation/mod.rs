@@ -63,13 +63,20 @@ impl Evaluation {
 }
 
 pub fn evaluate<T: Trace>(board: &Board, trace: &mut T) -> Score {
+    let mut eval = EvalScore::zero();
+    let mut ctx = EvalContext;
+
     if T::USE_INCREMENTAL_EVAL {
-        return board.state.evaluation.score(board);
+        eval += board.state.evaluation.scores[Color::White]
+            - board.state.evaluation.scores[Color::Black];
+    } else {
+        eval += evaluate_psqt(board, &mut ctx, Color::White, trace)
+            - evaluate_psqt(board, &mut ctx, Color::Black, trace);
     }
 
-    let mut ctx = EvalContext;
-    let eval = evaluate_side(board, &mut ctx, Color::White, trace)
-        - evaluate_side(board, &mut ctx, Color::Black, trace);
+    eval += evaluate_pawns(board, &mut ctx, Color::White, trace)
+        - evaluate_pawns(board, &mut ctx, Color::Black, trace);
+
     let score = eval.tapered(board.state.game_phase);
 
     match board.us() {
@@ -83,7 +90,7 @@ pub fn evaluate_static(board: &Board) -> Score {
     evaluate(board, &mut trace)
 }
 
-fn evaluate_side<T: Trace>(
+fn evaluate_psqt<T: Trace>(
     board: &Board,
     _ctx: &mut EvalContext,
     side: Color,
@@ -105,6 +112,33 @@ fn evaluate_side<T: Trace>(
             psqt_idx,
             EVAL_PARAMS.psqt[ptype][psqt_idx],
         );
+    }
+
+    eval
+}
+
+fn evaluate_pawns<T: Trace>(
+    board: &Board,
+    _ctx: &mut EvalContext,
+    side: Color,
+    trace: &mut T,
+) -> EvalScore {
+    let mut eval = EvalScore::zero();
+    let pawns = board.bitboards[side][PieceType::Pawn];
+
+    for square in pawns {
+        let file = square.file();
+        let adjacent_file_mask = file.adjacent_file_mask();
+
+        if (pawns & adjacent_file_mask).is_empty() {
+            add_isolated_pawn(
+                &mut eval,
+                trace,
+                side,
+                file as usize,
+                EVAL_PARAMS.isolated_pawn[file as usize],
+            );
+        }
     }
 
     eval
@@ -133,6 +167,17 @@ fn add_psqt(
     trace.term(side, EvalTerm::Psqt(ptype, psqt_idx), 1);
 }
 
+fn add_isolated_pawn(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    file: usize,
+    value: EvalScore,
+) {
+    *eval += value;
+    trace.term(side, EvalTerm::IsolatedPawn(file), 1);
+}
+
 pub fn psqt_value(square: Square, piece: Piece) -> EvalScore {
     EVAL_PARAMS.piece_square_value(square, piece)
 }
@@ -159,7 +204,7 @@ pub(crate) fn eval_to_score(eval: EvalValue) -> Score {
 mod tests {
     use super::*;
     use crate::{
-        board::square::Square,
+        board::square::{File, Square},
         movegen::{
             MoveGenerator,
             moves::{Move, MoveType},
@@ -242,6 +287,66 @@ mod tests {
     }
 
     #[test]
+    fn trace_records_isolated_pawns_by_file() {
+        let board = Board::from_fen("4k3/7p/8/8/8/8/P7/4K3 w - - 0 1").unwrap();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &mut trace);
+
+        assert_eq!(trace.isolated_pawn_feature(File::A as usize), 1);
+        assert_eq!(trace.isolated_pawn_feature(File::H as usize), -1);
+        assert_eq!(trace.isolated_pawn_feature(File::B as usize), 0);
+    }
+
+    #[test]
+    fn pawn_eval_scores_isolated_pawns_by_file() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/P7/4K3 w - - 0 1").unwrap();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, Color::White, &mut trace),
+            EVAL_PARAMS.isolated_pawn[File::A as usize]
+        );
+    }
+
+    #[test]
+    fn pawn_eval_does_not_score_connected_pawns_as_isolated() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/PP6/4K3 w - - 0 1").unwrap();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, Color::White, &mut trace),
+            EvalScore::zero()
+        );
+    }
+
+    #[test]
+    fn pawn_eval_scores_each_doubled_isolated_pawn() {
+        let board = Board::from_fen("4k3/8/8/8/8/P7/P7/4K3 w - - 0 1").unwrap();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, Color::White, &mut trace),
+            EVAL_PARAMS.isolated_pawn[File::A as usize] * 2
+        );
+    }
+
+    #[test]
+    fn static_eval_includes_isolated_pawn_regression() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/P7/4K3 w - - 0 1").unwrap();
+        let base_eval = board.state.evaluation.scores[Color::White]
+            - board.state.evaluation.scores[Color::Black];
+        let expected = (base_eval + EVAL_PARAMS.isolated_pawn[File::A as usize])
+            .tapered(board.state.game_phase);
+
+        assert_eq!(evaluate_static(&board), expected);
+        assert_ne!(evaluate_static(&board), board.state.evaluation.score(&board));
+    }
+
+    #[test]
     fn tapered_trace_features_match_white_pov_eval() {
         let board = Board::from_fen("4kq2/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
         let mut trace = FeatureVectorTrace::new();
@@ -250,8 +355,17 @@ mod tests {
 
         evaluate(&board, &mut trace);
 
-        let eval = evaluate_side(&board, &mut ctx, Color::White, &mut no_trace)
-            - evaluate_side(&board, &mut ctx, Color::Black, &mut no_trace);
+        let mut eval = EvalScore::zero();
+        if <NoTrace as Trace>::USE_INCREMENTAL_EVAL {
+            eval += board.state.evaluation.scores[Color::White]
+                - board.state.evaluation.scores[Color::Black];
+        } else {
+            eval += evaluate_psqt(&board, &mut ctx, Color::White, &mut no_trace)
+                - evaluate_psqt(&board, &mut ctx, Color::Black, &mut no_trace);
+        }
+        eval += evaluate_pawns(&board, &mut ctx, Color::White, &mut no_trace)
+            - evaluate_pawns(&board, &mut ctx, Color::Black, &mut no_trace);
+
         let phase = board.state.game_phase.min(MAX_GAME_PHASE) as f64;
         let expected = (eval.mg as f64 * phase + eval.eg as f64 * (MAX_GAME_PHASE as f64 - phase))
             / MAX_GAME_PHASE as f64;

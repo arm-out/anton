@@ -18,7 +18,7 @@ use super::EvalValue;
 // seed: 0
 
 #[rustfmt::skip]
-pub const WEIGHTS: [EvalValue; 780] = [
+pub const WEIGHTS: [EvalValue; 796] = [
     // material mg
         31,   144,   152,   168,   422,     0,
 
@@ -144,6 +144,12 @@ pub const WEIGHTS: [EvalValue; 780] = [
        -19,    -7,    12,    22,    25,    12,    -9,   -22,
        -34,   -14,     7,     4,     6,     6,   -15,   -34,
        -90,   -35,   -26,   -68,   -69,   -28,   -37,   -90,
+
+    // isolated pawn mg
+       -12,   -10,    -8,    -8,    -8,    -8,   -10,   -12,
+
+    // isolated pawn eg
+       -16,   -14,   -12,   -12,   -12,   -12,   -14,   -16,
 
 ];
 

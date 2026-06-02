@@ -72,6 +72,7 @@ pub struct EvalParams {
     pub material: [EvalScore; PieceType::COUNT],
     pub psqt: [[EvalScore; Square::COUNT]; PieceType::COUNT],
     pub piece_square: [[EvalScore; Square::COUNT]; PieceType::COUNT],
+    pub isolated_pawn: [EvalScore; 8],
 }
 
 impl EvalParams {
@@ -84,6 +85,7 @@ impl EvalParams {
             material: [EvalScore::zero(); PieceType::COUNT],
             psqt: [[EvalScore::zero(); Square::COUNT]; PieceType::COUNT],
             piece_square: [[EvalScore::zero(); Square::COUNT]; PieceType::COUNT],
+            isolated_pawn: [EvalScore::zero(); 8],
         };
         let mut ptype = 0;
 
@@ -109,6 +111,15 @@ impl EvalParams {
             ptype += 1;
         }
 
+        let mut file = 0;
+        while file < 8 {
+            params.isolated_pawn[file] = EvalScore::new(
+                weights[isolated_pawn_mg_weight_idx(file)],
+                weights[isolated_pawn_eg_weight_idx(file)],
+            );
+            file += 1;
+        }
+
         params
     }
 
@@ -128,6 +139,13 @@ impl EvalParams {
             }
 
             ptype += 1;
+        }
+
+        let mut file = 0;
+        while file < 8 {
+            weights[isolated_pawn_mg_weight_idx(file)] = self.isolated_pawn[file].mg;
+            weights[isolated_pawn_eg_weight_idx(file)] = self.isolated_pawn[file].eg;
+            file += 1;
         }
 
         weights
@@ -162,4 +180,12 @@ pub const fn psqt_mg_weight_idx(ptype: usize, square: usize) -> usize {
 
 pub const fn psqt_eg_weight_idx(ptype: usize, square: usize) -> usize {
     2 * PieceType::COUNT + PieceType::COUNT * Square::COUNT + ptype * Square::COUNT + square
+}
+
+pub const fn isolated_pawn_mg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + file
+}
+
+pub const fn isolated_pawn_eg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 8 + file
 }
