@@ -102,6 +102,14 @@ const WEIGHT_LAYOUT: &[WeightCategory] = &[
         name: "isolated pawn eg",
         shape: (1, 8),
     },
+    WeightCategory {
+        name: "doubled pawn mg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "doubled pawn eg",
+        shape: (1, 8),
+    },
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

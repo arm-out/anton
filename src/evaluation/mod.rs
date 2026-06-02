@@ -1,5 +1,6 @@
 use crate::board::{
     Board,
+    bitboard::Bitboard,
     piece::{Color, Piece, PieceType},
     square::Square,
 };
@@ -130,6 +131,7 @@ fn evaluate_pawns<T: Trace>(
         let file = square.file();
         let adjacent_file_mask = file.adjacent_file_mask();
 
+        // Penalize isolated pawns
         if (pawns & adjacent_file_mask).is_empty() {
             add_isolated_pawn(
                 &mut eval,
@@ -137,6 +139,18 @@ fn evaluate_pawns<T: Trace>(
                 side,
                 file as usize,
                 EVAL_PARAMS.isolated_pawn[file as usize],
+            );
+        }
+
+        // Penalize doubled pawns
+        if (pawns & Bitboard::from_file(file)).count_ones() > 1 {
+            add_doubled_pawn(
+                &mut eval,
+                trace,
+                side,
+                file as usize,
+                EVAL_PARAMS.doubled_pawn[file as usize],
+                1,
             );
         }
     }
@@ -176,6 +190,18 @@ fn add_isolated_pawn(
 ) {
     *eval += value;
     trace.term(side, EvalTerm::IsolatedPawn(file), 1);
+}
+
+fn add_doubled_pawn(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    file: usize,
+    value: EvalScore,
+    count: EvalValue,
+) {
+    *eval += value * count;
+    trace.term(side, EvalTerm::DoubledPawn(file), count);
 }
 
 pub fn psqt_value(square: Square, piece: Piece) -> EvalScore {
@@ -299,6 +325,18 @@ mod tests {
     }
 
     #[test]
+    fn trace_records_doubled_pawns_by_file() {
+        let board = Board::from_fen("4k3/7p/7p/8/8/P7/P7/4K3 w - - 0 1").unwrap();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &mut trace);
+
+        assert_eq!(trace.doubled_pawn_feature(File::A as usize), 2);
+        assert_eq!(trace.doubled_pawn_feature(File::H as usize), -2);
+        assert_eq!(trace.doubled_pawn_feature(File::B as usize), 0);
+    }
+
+    #[test]
     fn pawn_eval_scores_isolated_pawns_by_file() {
         let board = Board::from_fen("4k3/8/8/8/8/8/P7/4K3 w - - 0 1").unwrap();
         let mut trace = NoTrace;
@@ -331,19 +369,38 @@ mod tests {
         assert_eq!(
             evaluate_pawns(&board, &mut ctx, Color::White, &mut trace),
             EVAL_PARAMS.isolated_pawn[File::A as usize] * 2
+                + EVAL_PARAMS.doubled_pawn[File::A as usize] * 2
         );
     }
 
     #[test]
-    fn static_eval_includes_isolated_pawn_regression() {
-        let board = Board::from_fen("4k3/8/8/8/8/8/P7/4K3 w - - 0 1").unwrap();
+    fn pawn_eval_scores_each_stacked_pawn_as_doubled() {
+        let board = Board::from_fen("4k3/8/8/8/P7/P7/P7/4K3 w - - 0 1").unwrap();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, Color::White, &mut trace),
+            EVAL_PARAMS.isolated_pawn[File::A as usize] * 3
+                + EVAL_PARAMS.doubled_pawn[File::A as usize] * 3
+        );
+    }
+
+    #[test]
+    fn static_eval_includes_pawn_structure_regression() {
+        let board = Board::from_fen("4k3/8/8/8/8/P7/P7/4K3 w - - 0 1").unwrap();
         let base_eval = board.state.evaluation.scores[Color::White]
             - board.state.evaluation.scores[Color::Black];
-        let expected = (base_eval + EVAL_PARAMS.isolated_pawn[File::A as usize])
+        let expected = (base_eval
+            + EVAL_PARAMS.isolated_pawn[File::A as usize] * 2
+            + EVAL_PARAMS.doubled_pawn[File::A as usize] * 2)
             .tapered(board.state.game_phase);
 
         assert_eq!(evaluate_static(&board), expected);
-        assert_ne!(evaluate_static(&board), board.state.evaluation.score(&board));
+        assert_ne!(
+            evaluate_static(&board),
+            board.state.evaluation.score(&board)
+        );
     }
 
     #[test]
