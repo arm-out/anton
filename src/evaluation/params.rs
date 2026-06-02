@@ -75,6 +75,7 @@ pub struct EvalParams {
     pub isolated_pawn: [EvalScore; 8],
     pub doubled_pawn: [EvalScore; 8],
     pub backward_pawn: [EvalScore; 8],
+    pub connected_pawn: [EvalScore; Square::COUNT],
 }
 
 impl EvalParams {
@@ -90,6 +91,7 @@ impl EvalParams {
             isolated_pawn: [EvalScore::zero(); 8],
             doubled_pawn: [EvalScore::zero(); 8],
             backward_pawn: [EvalScore::zero(); 8],
+            connected_pawn: [EvalScore::zero(); Square::COUNT],
         };
         let mut ptype = 0;
 
@@ -132,6 +134,15 @@ impl EvalParams {
             file += 1;
         }
 
+        let mut square = 0;
+        while square < Square::COUNT {
+            params.connected_pawn[square] = EvalScore::new(
+                weights[connected_pawn_mg_weight_idx(square)],
+                weights[connected_pawn_eg_weight_idx(square)],
+            );
+            square += 1;
+        }
+
         params
     }
 
@@ -162,6 +173,13 @@ impl EvalParams {
             weights[backward_pawn_mg_weight_idx(file)] = self.backward_pawn[file].mg;
             weights[backward_pawn_eg_weight_idx(file)] = self.backward_pawn[file].eg;
             file += 1;
+        }
+
+        let mut square = 0;
+        while square < Square::COUNT {
+            weights[connected_pawn_mg_weight_idx(square)] = self.connected_pawn[square].mg;
+            weights[connected_pawn_eg_weight_idx(square)] = self.connected_pawn[square].eg;
+            square += 1;
         }
 
         weights
@@ -220,4 +238,12 @@ pub const fn backward_pawn_mg_weight_idx(file: usize) -> usize {
 
 pub const fn backward_pawn_eg_weight_idx(file: usize) -> usize {
     2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 40 + file
+}
+
+pub const fn connected_pawn_mg_weight_idx(square: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 48 + square
+}
+
+pub const fn connected_pawn_eg_weight_idx(square: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 48 + Square::COUNT + square
 }

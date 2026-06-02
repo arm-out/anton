@@ -160,6 +160,16 @@ fn evaluate_pawns<T: Trace>(
                 file as usize,
                 EVAL_PARAMS.backward_pawn[file as usize],
             );
+            // Bonus for connected pawns
+        } else if !supports.is_empty() {
+            let connected_idx = square.psqt_idx(side);
+            add_connected_pawn(
+                &mut eval,
+                trace,
+                side,
+                connected_idx,
+                EVAL_PARAMS.connected_pawn[connected_idx],
+            );
         }
 
         // Penalize doubled pawns
@@ -233,6 +243,17 @@ fn add_backward_pawn(
 ) {
     *eval += value;
     trace.term(side, EvalTerm::BackwardPawn(file), 1);
+}
+
+fn add_connected_pawn(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    square: usize,
+    value: EvalScore,
+) {
+    *eval += value;
+    trace.term(side, EvalTerm::ConnectedPawn(square), 1);
 }
 
 pub fn psqt_value(square: Square, piece: Piece) -> EvalScore {
@@ -383,7 +404,7 @@ mod tests {
 
     #[test]
     fn trace_records_backward_pawns_by_file() {
-        let board = Board::from_fen("4k3/8/8/2p1p3/2P5/3P4/8/4K3 w - - 0 1").unwrap();
+        let board = Board::from_fen("4k3/8/8/2p1p3/8/2PP4/8/4K3 w - - 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let mut trace = FeatureVectorTrace::new();
 
@@ -394,13 +415,45 @@ mod tests {
 
     #[test]
     fn trace_records_black_backward_pawn_with_opposite_sign() {
-        let board = Board::from_fen("4k3/8/3p4/2p5/2P1P3/8/8/4K3 w - - 0 1").unwrap();
+        let board = Board::from_fen("4k3/8/2pp4/8/2P1P3/8/8/4K3 w - - 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let mut trace = FeatureVectorTrace::new();
 
         evaluate(&board, &movegen, &mut trace);
 
         assert_eq!(trace.backward_pawn_feature(File::D as usize), -1);
+    }
+
+    #[test]
+    fn trace_records_connected_pawns_by_square() {
+        let board = Board::from_fen("4k3/8/8/8/8/3P4/2P5/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(
+            trace.connected_pawn_feature(Square::D3.psqt_idx(Color::White)),
+            1
+        );
+        assert_eq!(
+            trace.connected_pawn_feature(Square::D4.psqt_idx(Color::White)),
+            0
+        );
+    }
+
+    #[test]
+    fn trace_records_black_connected_pawn_with_opposite_sign() {
+        let board = Board::from_fen("4k3/2p5/3p4/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(
+            trace.connected_pawn_feature(Square::D6.psqt_idx(Color::Black)),
+            -1
+        );
     }
 
     #[test]
@@ -459,7 +512,7 @@ mod tests {
 
     #[test]
     fn pawn_eval_scores_backward_pawn() {
-        let board = Board::from_fen("4k3/8/8/2p1p3/2P5/3P4/8/4K3 w - - 0 1").unwrap();
+        let board = Board::from_fen("4k3/8/8/2p1p3/8/2PP4/8/4K3 w - - 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let mut trace = NoTrace;
         let mut ctx = EvalContext;
@@ -471,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn pawn_eval_does_not_score_supported_pawn_as_backward() {
+    fn pawn_eval_scores_supported_pawn_as_connected_not_backward() {
         let board = Board::from_fen("4k3/8/8/2p1p3/8/3P4/2P5/4K3 w - - 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let mut trace = NoTrace;
@@ -479,7 +532,20 @@ mod tests {
 
         assert_eq!(
             evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
-            EvalScore::zero()
+            EVAL_PARAMS.connected_pawn[Square::D3.psqt_idx(Color::White)]
+        );
+    }
+
+    #[test]
+    fn pawn_eval_scores_connected_pawn() {
+        let board = Board::from_fen("4k3/8/8/8/8/3P4/2P5/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EVAL_PARAMS.connected_pawn[Square::D3.psqt_idx(Color::White)]
         );
     }
 
