@@ -62,14 +62,14 @@ impl Evaluation {
     }
 }
 
-pub fn evaluate<T: Trace>(board: &Board, params: &EvalParams, trace: &mut T) -> Score {
-    if T::USE_INCREMENTAL_EVAL && *params == EVAL_PARAMS {
+pub fn evaluate<T: Trace>(board: &Board, trace: &mut T) -> Score {
+    if T::USE_INCREMENTAL_EVAL {
         return board.state.evaluation.score(board);
     }
 
     let mut ctx = EvalContext;
-    let eval = evaluate_side(board, &mut ctx, Color::White, params, trace)
-        - evaluate_side(board, &mut ctx, Color::Black, params, trace);
+    let eval = evaluate_side(board, &mut ctx, Color::White, trace)
+        - evaluate_side(board, &mut ctx, Color::Black, trace);
     let score = eval.tapered(board.state.game_phase);
 
     match board.us() {
@@ -80,14 +80,13 @@ pub fn evaluate<T: Trace>(board: &Board, params: &EvalParams, trace: &mut T) -> 
 
 pub fn evaluate_static(board: &Board) -> Score {
     let mut trace = NoTrace;
-    evaluate(board, &EVAL_PARAMS, &mut trace)
+    evaluate(board, &mut trace)
 }
 
 fn evaluate_side<T: Trace>(
     board: &Board,
     _ctx: &mut EvalContext,
     side: Color,
-    params: &EvalParams,
     trace: &mut T,
 ) -> EvalScore {
     let mut eval = EvalScore::zero();
@@ -97,14 +96,14 @@ fn evaluate_side<T: Trace>(
         let ptype = piece.ptype();
         let psqt_idx = square.psqt_idx(side);
 
-        add_material(&mut eval, trace, side, ptype, params.material[ptype]);
+        add_material(&mut eval, trace, side, ptype, EVAL_PARAMS.material[ptype]);
         add_psqt(
             &mut eval,
             trace,
             side,
             ptype,
             psqt_idx,
-            params.psqt[ptype][psqt_idx],
+            EVAL_PARAMS.psqt[ptype][psqt_idx],
         );
     }
 
@@ -174,10 +173,7 @@ mod tests {
 
         assert_eq!(board.state.evaluation, Evaluation::new(&board));
         let mut trace = NoTrace;
-        assert_eq!(
-            evaluate_static(&board),
-            evaluate(&board, &EVAL_PARAMS, &mut trace)
-        );
+        assert_eq!(evaluate_static(&board), evaluate(&board, &mut trace));
         assert_eq!(board.state.game_phase, MAX_GAME_PHASE);
     }
 
@@ -201,26 +197,8 @@ mod tests {
             let board = Board::from_fen(fen).unwrap();
             let mut trace = NoTrace;
 
-            assert_eq!(
-                evaluate(&board, &EVAL_PARAMS, &mut trace),
-                evaluate_static(&board)
-            );
+            assert_eq!(evaluate(&board, &mut trace), evaluate_static(&board));
         }
-    }
-
-    #[test]
-    fn no_trace_uses_custom_params_when_params_are_not_current() {
-        let board = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
-        let mut weights = EVAL_PARAMS.weights();
-        weights[params::material_mg_weight_idx(PieceType::Queen as usize)] += 100;
-        weights[params::material_eg_weight_idx(PieceType::Queen as usize)] += 100;
-        let params = EvalParams::from_weights(weights);
-        let mut trace = NoTrace;
-
-        assert_ne!(
-            evaluate(&board, &params, &mut trace),
-            evaluate_static(&board)
-        );
     }
 
     #[test]
@@ -228,7 +206,7 @@ mod tests {
         let board = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
         let mut trace = FeatureVectorTrace::new();
 
-        evaluate(&board, &EVAL_PARAMS, &mut trace);
+        evaluate(&board, &mut trace);
 
         assert_eq!(trace.material_feature(PieceType::Queen), 1);
     }
@@ -238,7 +216,7 @@ mod tests {
         let board = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
         let mut trace = FeatureVectorTrace::new();
 
-        evaluate(&board, &EVAL_PARAMS, &mut trace);
+        evaluate(&board, &mut trace);
 
         assert_eq!(trace.material_feature(PieceType::Queen), 1);
         assert_eq!(
@@ -253,7 +231,7 @@ mod tests {
         let board = Board::from_fen("4kq2/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
         let mut trace = FeatureVectorTrace::new();
 
-        evaluate(&board, &EVAL_PARAMS, &mut trace);
+        evaluate(&board, &mut trace);
 
         assert_eq!(trace.material_feature(PieceType::Queen), -1);
         assert_eq!(
@@ -270,10 +248,10 @@ mod tests {
         let mut no_trace = NoTrace;
         let mut ctx = EvalContext;
 
-        evaluate(&board, &EVAL_PARAMS, &mut trace);
+        evaluate(&board, &mut trace);
 
-        let eval = evaluate_side(&board, &mut ctx, Color::White, &EVAL_PARAMS, &mut no_trace)
-            - evaluate_side(&board, &mut ctx, Color::Black, &EVAL_PARAMS, &mut no_trace);
+        let eval = evaluate_side(&board, &mut ctx, Color::White, &mut no_trace)
+            - evaluate_side(&board, &mut ctx, Color::Black, &mut no_trace);
         let phase = board.state.game_phase.min(MAX_GAME_PHASE) as f64;
         let expected = (eval.mg as f64 * phase + eval.eg as f64 * (MAX_GAME_PHASE as f64 - phase))
             / MAX_GAME_PHASE as f64;

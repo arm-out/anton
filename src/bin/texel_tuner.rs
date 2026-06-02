@@ -742,7 +742,7 @@ impl CacheProgress {
 fn sample_from_row(row: &DatasetRow, validation_percent: u8, seed: u64) -> Result<Sample, String> {
     let board = Board::from_fen(&row.fen).map_err(|err| format!("invalid fen: {err}"))?;
     let mut trace = FeatureVectorTrace::new();
-    evaluate(&board, &EVAL_PARAMS, &mut trace);
+    evaluate(&board, &mut trace);
     let features = trace
         .tapered_features(board.state.game_phase)
         .into_iter()
