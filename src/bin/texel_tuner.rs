@@ -13,6 +13,7 @@ use std::{
 use anton::{
     board::Board,
     evaluation::{EVAL_PARAMS, EvalValue, FeatureVectorTrace, evaluate, trace::FEATURE_COUNT},
+    movegen::MoveGenerator,
 };
 
 const CACHE_MAGIC: &[u8; 8] = b"ANTTUNE1";
@@ -108,6 +109,14 @@ const WEIGHT_LAYOUT: &[WeightCategory] = &[
     },
     WeightCategory {
         name: "doubled pawn eg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "backward pawn mg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "backward pawn eg",
         shape: (1, 8),
     },
 ];
@@ -748,6 +757,7 @@ fn build_cache(common: &CommonOptions, mut header: CacheHeader) -> Result<CacheH
 
     let mut progress = CacheProgress::new(header.dataset_len);
     let mut skips = SkipStats::default();
+    let movegen = MoveGenerator::new();
     let mut reader = BufReader::new(dataset);
     let mut line = String::new();
     let mut line_idx = 0_u64;
@@ -769,7 +779,7 @@ fn build_cache(common: &CommonOptions, mut header: CacheHeader) -> Result<CacheH
                 continue;
             }
         };
-        let sample = match sample_from_row(&row, common.validation_percent, common.seed) {
+        let sample = match sample_from_row(&row, common.validation_percent, common.seed, &movegen) {
             Ok(sample) => sample,
             Err(err) => {
                 header.stats.skipped += 1;
@@ -892,10 +902,15 @@ impl CacheProgress {
     }
 }
 
-fn sample_from_row(row: &DatasetRow, validation_percent: u8, seed: u64) -> Result<Sample, String> {
+fn sample_from_row(
+    row: &DatasetRow,
+    validation_percent: u8,
+    seed: u64,
+    movegen: &MoveGenerator,
+) -> Result<Sample, String> {
     let board = Board::from_fen(&row.fen).map_err(|err| format!("invalid fen: {err}"))?;
     let mut trace = FeatureVectorTrace::new();
-    evaluate(&board, &mut trace);
+    evaluate(&board, movegen, &mut trace);
     let features = trace
         .tapered_features(board.state.game_phase)
         .into_iter()

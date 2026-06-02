@@ -1,8 +1,11 @@
-use crate::board::{
-    Board,
-    bitboard::Bitboard,
-    piece::{Color, Piece, PieceType},
-    square::Square,
+use crate::{
+    board::{
+        Board,
+        bitboard::Bitboard,
+        piece::{Color, Piece, PieceType},
+        square::Square,
+    },
+    movegen::MoveGenerator,
 };
 
 pub mod params;
@@ -63,7 +66,7 @@ impl Evaluation {
     }
 }
 
-pub fn evaluate<T: Trace>(board: &Board, trace: &mut T) -> Score {
+pub fn evaluate<T: Trace>(board: &Board, movegen: &MoveGenerator, trace: &mut T) -> Score {
     let mut eval = EvalScore::zero();
     let mut ctx = EvalContext;
 
@@ -75,8 +78,8 @@ pub fn evaluate<T: Trace>(board: &Board, trace: &mut T) -> Score {
             - evaluate_psqt(board, &mut ctx, Color::Black, trace);
     }
 
-    eval += evaluate_pawns(board, &mut ctx, Color::White, trace)
-        - evaluate_pawns(board, &mut ctx, Color::Black, trace);
+    eval += evaluate_pawns(board, &mut ctx, movegen, Color::White, trace)
+        - evaluate_pawns(board, &mut ctx, movegen, Color::Black, trace);
 
     let score = eval.tapered(board.state.game_phase);
 
@@ -86,9 +89,9 @@ pub fn evaluate<T: Trace>(board: &Board, trace: &mut T) -> Score {
     }
 }
 
-pub fn evaluate_static(board: &Board) -> Score {
+pub fn evaluate_static(board: &Board, movegen: &MoveGenerator) -> Score {
     let mut trace = NoTrace;
-    evaluate(board, &mut trace)
+    evaluate(board, movegen, &mut trace)
 }
 
 fn evaluate_psqt<T: Trace>(
@@ -121,15 +124,23 @@ fn evaluate_psqt<T: Trace>(
 fn evaluate_pawns<T: Trace>(
     board: &Board,
     _ctx: &mut EvalContext,
+    movegen: &MoveGenerator,
     side: Color,
     trace: &mut T,
 ) -> EvalScore {
     let mut eval = EvalScore::zero();
     let pawns = board.bitboards[side][PieceType::Pawn];
+    let enemy_pawns = board.bitboards[!side][PieceType::Pawn];
 
     for square in pawns {
         let file = square.file();
         let adjacent_file_mask = file.adjacent_file_mask();
+        let stop_square = match side {
+            Color::White => Square::from_idx(square as usize + 8),
+            Color::Black => Square::from_idx(square as usize - 8),
+        };
+        let push_threat = enemy_pawns & movegen.get_pawn_attack_mask(stop_square, side);
+        let supports = pawns & movegen.get_pawn_attack_mask(square, !side);
 
         // Penalize isolated pawns
         if (pawns & adjacent_file_mask).is_empty() {
@@ -139,6 +150,15 @@ fn evaluate_pawns<T: Trace>(
                 side,
                 file as usize,
                 EVAL_PARAMS.isolated_pawn[file as usize],
+            );
+            // Penalize backward pawns
+        } else if supports.is_empty() && !push_threat.is_empty() {
+            add_backward_pawn(
+                &mut eval,
+                trace,
+                side,
+                file as usize,
+                EVAL_PARAMS.backward_pawn[file as usize],
             );
         }
 
@@ -204,6 +224,17 @@ fn add_doubled_pawn(
     trace.term(side, EvalTerm::DoubledPawn(file), count);
 }
 
+fn add_backward_pawn(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    file: usize,
+    value: EvalScore,
+) {
+    *eval += value;
+    trace.term(side, EvalTerm::BackwardPawn(file), 1);
+}
+
 pub fn psqt_value(square: Square, piece: Piece) -> EvalScore {
     EVAL_PARAMS.piece_square_value(square, piece)
 }
@@ -241,10 +272,14 @@ mod tests {
     fn initializes_starting_evaluation() {
         let board =
             Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
 
         assert_eq!(board.state.evaluation, Evaluation::new(&board));
         let mut trace = NoTrace;
-        assert_eq!(evaluate_static(&board), evaluate(&board, &mut trace));
+        assert_eq!(
+            evaluate_static(&board, &movegen),
+            evaluate(&board, &movegen, &mut trace)
+        );
         assert_eq!(board.state.game_phase, MAX_GAME_PHASE);
     }
 
@@ -252,9 +287,10 @@ mod tests {
     fn evaluation_scores_material_advantage() {
         let white_queen = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
         let black_queen = Board::from_fen("4kq2/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
 
-        assert!(evaluate_static(&white_queen) > 900);
-        assert!(evaluate_static(&black_queen) < -900);
+        assert!(evaluate_static(&white_queen, &movegen) > 900);
+        assert!(evaluate_static(&black_queen, &movegen) < -900);
     }
 
     #[test]
@@ -266,18 +302,23 @@ mod tests {
             "8/8/8/3n4/4B3/8/8/4K2k b - - 0 1",
         ] {
             let board = Board::from_fen(fen).unwrap();
+            let movegen = MoveGenerator::new();
             let mut trace = NoTrace;
 
-            assert_eq!(evaluate(&board, &mut trace), evaluate_static(&board));
+            assert_eq!(
+                evaluate(&board, &movegen, &mut trace),
+                evaluate_static(&board, &movegen)
+            );
         }
     }
 
     #[test]
     fn feature_trace_still_rebuilds_features() {
         let board = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = FeatureVectorTrace::new();
 
-        evaluate(&board, &mut trace);
+        evaluate(&board, &movegen, &mut trace);
 
         assert_eq!(trace.material_feature(PieceType::Queen), 1);
     }
@@ -285,9 +326,10 @@ mod tests {
     #[test]
     fn trace_records_lone_white_queen_features() {
         let board = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = FeatureVectorTrace::new();
 
-        evaluate(&board, &mut trace);
+        evaluate(&board, &movegen, &mut trace);
 
         assert_eq!(trace.material_feature(PieceType::Queen), 1);
         assert_eq!(
@@ -300,9 +342,10 @@ mod tests {
     #[test]
     fn trace_records_mirrored_black_piece_with_opposite_sign() {
         let board = Board::from_fen("4kq2/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = FeatureVectorTrace::new();
 
-        evaluate(&board, &mut trace);
+        evaluate(&board, &movegen, &mut trace);
 
         assert_eq!(trace.material_feature(PieceType::Queen), -1);
         assert_eq!(
@@ -315,9 +358,10 @@ mod tests {
     #[test]
     fn trace_records_isolated_pawns_by_file() {
         let board = Board::from_fen("4k3/7p/8/8/8/8/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = FeatureVectorTrace::new();
 
-        evaluate(&board, &mut trace);
+        evaluate(&board, &movegen, &mut trace);
 
         assert_eq!(trace.isolated_pawn_feature(File::A as usize), 1);
         assert_eq!(trace.isolated_pawn_feature(File::H as usize), -1);
@@ -327,9 +371,10 @@ mod tests {
     #[test]
     fn trace_records_doubled_pawns_by_file() {
         let board = Board::from_fen("4k3/7p/7p/8/8/P7/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = FeatureVectorTrace::new();
 
-        evaluate(&board, &mut trace);
+        evaluate(&board, &movegen, &mut trace);
 
         assert_eq!(trace.doubled_pawn_feature(File::A as usize), 2);
         assert_eq!(trace.doubled_pawn_feature(File::H as usize), -2);
@@ -337,13 +382,36 @@ mod tests {
     }
 
     #[test]
+    fn trace_records_backward_pawns_by_file() {
+        let board = Board::from_fen("4k3/8/8/2p1p3/2P5/3P4/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(trace.backward_pawn_feature(File::D as usize), 1);
+    }
+
+    #[test]
+    fn trace_records_black_backward_pawn_with_opposite_sign() {
+        let board = Board::from_fen("4k3/8/3p4/2p5/2P1P3/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(trace.backward_pawn_feature(File::D as usize), -1);
+    }
+
+    #[test]
     fn pawn_eval_scores_isolated_pawns_by_file() {
         let board = Board::from_fen("4k3/8/8/8/8/8/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = NoTrace;
         let mut ctx = EvalContext;
 
         assert_eq!(
-            evaluate_pawns(&board, &mut ctx, Color::White, &mut trace),
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
             EVAL_PARAMS.isolated_pawn[File::A as usize]
         );
     }
@@ -351,11 +419,12 @@ mod tests {
     #[test]
     fn pawn_eval_does_not_score_connected_pawns_as_isolated() {
         let board = Board::from_fen("4k3/8/8/8/8/8/PP6/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = NoTrace;
         let mut ctx = EvalContext;
 
         assert_eq!(
-            evaluate_pawns(&board, &mut ctx, Color::White, &mut trace),
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
             EvalScore::zero()
         );
     }
@@ -363,11 +432,12 @@ mod tests {
     #[test]
     fn pawn_eval_scores_each_doubled_isolated_pawn() {
         let board = Board::from_fen("4k3/8/8/8/8/P7/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = NoTrace;
         let mut ctx = EvalContext;
 
         assert_eq!(
-            evaluate_pawns(&board, &mut ctx, Color::White, &mut trace),
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
             EVAL_PARAMS.isolated_pawn[File::A as usize] * 2
                 + EVAL_PARAMS.doubled_pawn[File::A as usize] * 2
         );
@@ -376,19 +446,47 @@ mod tests {
     #[test]
     fn pawn_eval_scores_each_stacked_pawn_as_doubled() {
         let board = Board::from_fen("4k3/8/8/8/P7/P7/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = NoTrace;
         let mut ctx = EvalContext;
 
         assert_eq!(
-            evaluate_pawns(&board, &mut ctx, Color::White, &mut trace),
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
             EVAL_PARAMS.isolated_pawn[File::A as usize] * 3
                 + EVAL_PARAMS.doubled_pawn[File::A as usize] * 3
         );
     }
 
     #[test]
+    fn pawn_eval_scores_backward_pawn() {
+        let board = Board::from_fen("4k3/8/8/2p1p3/2P5/3P4/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EVAL_PARAMS.backward_pawn[File::D as usize]
+        );
+    }
+
+    #[test]
+    fn pawn_eval_does_not_score_supported_pawn_as_backward() {
+        let board = Board::from_fen("4k3/8/8/2p1p3/8/3P4/2P5/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EvalScore::zero()
+        );
+    }
+
+    #[test]
     fn static_eval_includes_pawn_structure_regression() {
         let board = Board::from_fen("4k3/8/8/8/8/P7/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let base_eval = board.state.evaluation.scores[Color::White]
             - board.state.evaluation.scores[Color::Black];
         let expected = (base_eval
@@ -396,9 +494,9 @@ mod tests {
             + EVAL_PARAMS.doubled_pawn[File::A as usize] * 2)
             .tapered(board.state.game_phase);
 
-        assert_eq!(evaluate_static(&board), expected);
+        assert_eq!(evaluate_static(&board, &movegen), expected);
         assert_ne!(
-            evaluate_static(&board),
+            evaluate_static(&board, &movegen),
             board.state.evaluation.score(&board)
         );
     }
@@ -406,11 +504,12 @@ mod tests {
     #[test]
     fn tapered_trace_features_match_white_pov_eval() {
         let board = Board::from_fen("4kq2/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
         let mut trace = FeatureVectorTrace::new();
         let mut no_trace = NoTrace;
         let mut ctx = EvalContext;
 
-        evaluate(&board, &mut trace);
+        evaluate(&board, &movegen, &mut trace);
 
         let mut eval = EvalScore::zero();
         if <NoTrace as Trace>::USE_INCREMENTAL_EVAL {
@@ -420,8 +519,8 @@ mod tests {
             eval += evaluate_psqt(&board, &mut ctx, Color::White, &mut no_trace)
                 - evaluate_psqt(&board, &mut ctx, Color::Black, &mut no_trace);
         }
-        eval += evaluate_pawns(&board, &mut ctx, Color::White, &mut no_trace)
-            - evaluate_pawns(&board, &mut ctx, Color::Black, &mut no_trace);
+        eval += evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut no_trace)
+            - evaluate_pawns(&board, &mut ctx, &movegen, Color::Black, &mut no_trace);
 
         let phase = board.state.game_phase.min(MAX_GAME_PHASE) as f64;
         let expected = (eval.mg as f64 * phase + eval.eg as f64 * (MAX_GAME_PHASE as f64 - phase))

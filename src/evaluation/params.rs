@@ -74,6 +74,7 @@ pub struct EvalParams {
     pub piece_square: [[EvalScore; Square::COUNT]; PieceType::COUNT],
     pub isolated_pawn: [EvalScore; 8],
     pub doubled_pawn: [EvalScore; 8],
+    pub backward_pawn: [EvalScore; 8],
 }
 
 impl EvalParams {
@@ -88,6 +89,7 @@ impl EvalParams {
             piece_square: [[EvalScore::zero(); Square::COUNT]; PieceType::COUNT],
             isolated_pawn: [EvalScore::zero(); 8],
             doubled_pawn: [EvalScore::zero(); 8],
+            backward_pawn: [EvalScore::zero(); 8],
         };
         let mut ptype = 0;
 
@@ -123,6 +125,10 @@ impl EvalParams {
                 weights[doubled_pawn_mg_weight_idx(file)],
                 weights[doubled_pawn_eg_weight_idx(file)],
             );
+            params.backward_pawn[file] = EvalScore::new(
+                weights[backward_pawn_mg_weight_idx(file)],
+                weights[backward_pawn_eg_weight_idx(file)],
+            );
             file += 1;
         }
 
@@ -153,6 +159,8 @@ impl EvalParams {
             weights[isolated_pawn_eg_weight_idx(file)] = self.isolated_pawn[file].eg;
             weights[doubled_pawn_mg_weight_idx(file)] = self.doubled_pawn[file].mg;
             weights[doubled_pawn_eg_weight_idx(file)] = self.doubled_pawn[file].eg;
+            weights[backward_pawn_mg_weight_idx(file)] = self.backward_pawn[file].mg;
+            weights[backward_pawn_eg_weight_idx(file)] = self.backward_pawn[file].eg;
             file += 1;
         }
 
@@ -204,4 +212,12 @@ pub const fn doubled_pawn_mg_weight_idx(file: usize) -> usize {
 
 pub const fn doubled_pawn_eg_weight_idx(file: usize) -> usize {
     2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 24 + file
+}
+
+pub const fn backward_pawn_mg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 32 + file
+}
+
+pub const fn backward_pawn_eg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 40 + file
 }

@@ -18,7 +18,7 @@ use super::EvalValue;
 // seed: 0
 
 #[rustfmt::skip]
-pub const WEIGHTS: [EvalValue; 812] = [
+pub const WEIGHTS: [EvalValue; 828] = [
     // material mg
         31,   144,   152,   168,   422,     0,
 
@@ -156,6 +156,12 @@ pub const WEIGHTS: [EvalValue; 812] = [
 
     // doubled pawn eg
        -18,   -16,   -14,   -14,   -14,   -14,   -16,   -18,
+
+    // backward pawn mg
+       -10,    -8,    -7,    -7,    -7,    -7,    -8,   -10,
+
+    // backward pawn eg
+       -14,   -12,   -10,   -10,   -10,   -10,   -12,   -14,
 
 ];
 

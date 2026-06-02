@@ -135,7 +135,7 @@ impl Search {
         }
 
         if info.should_stop() {
-            return evaluate_static(refs.board);
+            return evaluate_static(refs.board, refs.movegen);
         }
 
         let key = refs.board.state.zobrist_key;
@@ -148,7 +148,7 @@ impl Search {
             return score;
         }
 
-        let static_eval = evaluate_static(refs.board);
+        let static_eval = evaluate_static(refs.board, refs.movegen);
         let in_check = Self::in_check(refs.board, refs.movegen);
 
         if depth <= REVERSE_FUTILITY_MAX_DEPTH
@@ -246,7 +246,7 @@ impl Search {
         }
 
         let in_check = Self::in_check(refs.board, refs.movegen);
-        let stand_pat = evaluate_static(refs.board);
+        let stand_pat = evaluate_static(refs.board, refs.movegen);
 
         if info.should_stop() {
             info.leaf();
