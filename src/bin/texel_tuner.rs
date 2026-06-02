@@ -834,8 +834,8 @@ fn build_cache(common: &CommonOptions, mut header: CacheHeader) -> Result<CacheH
 
 fn parse_dataset_line(line: &str) -> Result<DatasetRow, String> {
     let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.len() < 8 {
-        return Err("expected 8 fields".to_string());
+    if parts.len() < 7 {
+        return Err("expected at least 7 fields".to_string());
     }
     let fen = parts[0..6].join(" ");
     let result_token = parts[6]
@@ -848,7 +848,10 @@ fn parse_dataset_line(line: &str) -> Result<DatasetRow, String> {
         "1" | "1.0" => 1.0,
         _ => return Err("invalid result".to_string()),
     };
-    let source_eval = parts[7].parse().map_err(|_| "invalid eval".to_string())?;
+    let source_eval = match parts.get(7) {
+        Some(value) => value.parse().map_err(|_| "invalid eval".to_string())?,
+        None => 0,
+    };
     Ok(DatasetRow {
         fen,
         result,
@@ -1506,8 +1509,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_eval() {
-        assert!(parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 1").is_err());
+    fn defaults_missing_eval_to_zero() {
+        let row = parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 1").unwrap();
+        assert_eq!(row.result, 1.0);
+        assert_eq!(row.source_eval, 0);
     }
 
     #[test]
