@@ -1,23 +1,29 @@
 use crate::{
     board::{
         Board,
+        bitboard::Bitboard,
         piece::{Color, Piece, PieceType},
         square::Square,
     },
-    evaluation::psqt::PIECE_VALUES,
+    movegen::MoveGenerator,
 };
 
-mod psqt;
+pub mod params;
+pub mod trace;
+mod weights;
+
+pub use params::{EVAL_PARAMS, EvalContext, EvalParams, EvalScore};
+pub use trace::{EvalTerm, FeatureVectorTrace, NoTrace, Trace};
 
 pub type Score = i16;
+pub type EvalValue = i32;
 
 pub const MAX_GAME_PHASE: u8 = 24;
 pub const PHASE_VALUES: [u8; PieceType::COUNT] = [0, 1, 1, 2, 4, 0];
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Evaluation {
-    mg: [Score; Color::COUNT],
-    eg: [Score; Color::COUNT],
+    scores: [EvalScore; Color::COUNT],
 }
 
 impl Evaluation {
@@ -39,63 +45,225 @@ impl Evaluation {
 
     pub fn add_piece(&mut self, square: Square, piece: Piece) {
         let color = piece.color();
-        let (mg, eg) = psqt_value(square, piece);
 
-        self.mg[color] += mg;
-        self.eg[color] += eg;
+        self.scores[color] += psqt_value(square, piece);
     }
 
     pub fn remove_piece(&mut self, square: Square, piece: Piece) {
         let color = piece.color();
-        let (mg, eg) = psqt_value(square, piece);
 
-        self.mg[color] -= mg;
-        self.eg[color] -= eg;
+        self.scores[color] -= psqt_value(square, piece);
     }
 
-    // https://www.chessprogramming.org/Tapered_Eval
-    pub fn score(&self, side: Color, game_phase: u8) -> Score {
-        let mg = (self.mg[side] - self.mg[!side]) as i32;
-        let eg = (self.eg[side] - self.eg[!side]) as i32;
-        let phase = game_phase.min(MAX_GAME_PHASE) as i32;
-        let eg_phase = MAX_GAME_PHASE as i32 - phase;
+    pub fn score(&self, board: &Board) -> Score {
+        let eval = self.scores[Color::White] - self.scores[Color::Black];
+        let score = eval.tapered(board.state.game_phase);
 
-        ((mg * phase + eg * eg_phase) / MAX_GAME_PHASE as i32) as Score
+        match board.us() {
+            Color::White => score,
+            Color::Black => -score,
+        }
     }
 }
 
-pub fn psqt_value(square: Square, piece: Piece) -> (Score, Score) {
-    let idx = square.psqt_idx(piece.color());
-    match piece.ptype() {
-        PieceType::Pawn => (
-            psqt::PAWN_MG_PSQT[idx] as Score,
-            psqt::PAWN_EG_PSQT[idx] as Score,
-        ),
-        PieceType::Knight => (
-            psqt::KNIGHT_PSQT[idx] as Score,
-            psqt::KNIGHT_PSQT[idx] as Score,
-        ),
-        PieceType::Bishop => (
-            psqt::BISHOP_PSQT[idx] as Score,
-            psqt::BISHOP_PSQT[idx] as Score,
-        ),
-        PieceType::Rook => (psqt::ROOK_PSQT[idx] as Score, psqt::ROOK_PSQT[idx] as Score),
-        PieceType::Queen => (
-            psqt::QUEEN_PSQT[idx] as Score,
-            psqt::QUEEN_PSQT[idx] as Score,
-        ),
-        PieceType::King => (
-            psqt::KING_MG_PSQT[idx] as Score,
-            psqt::KING_EG_PSQT[idx] as Score,
-        ),
-        PieceType::None => (0, 0),
+pub fn evaluate<T: Trace>(board: &Board, movegen: &MoveGenerator, trace: &mut T) -> Score {
+    let mut eval = EvalScore::zero();
+    let mut ctx = EvalContext;
+
+    if T::USE_INCREMENTAL_EVAL {
+        eval += board.state.evaluation.scores[Color::White]
+            - board.state.evaluation.scores[Color::Black];
+    } else {
+        eval += evaluate_psqt(board, &mut ctx, Color::White, trace)
+            - evaluate_psqt(board, &mut ctx, Color::Black, trace);
     }
+
+    eval += evaluate_pawns(board, &mut ctx, movegen, Color::White, trace)
+        - evaluate_pawns(board, &mut ctx, movegen, Color::Black, trace);
+
+    let score = eval.tapered(board.state.game_phase);
+
+    match board.us() {
+        Color::White => score,
+        Color::Black => -score,
+    }
+}
+
+pub fn evaluate_static(board: &Board, movegen: &MoveGenerator) -> Score {
+    let mut trace = NoTrace;
+    evaluate(board, movegen, &mut trace)
+}
+
+fn evaluate_psqt<T: Trace>(
+    board: &Board,
+    _ctx: &mut EvalContext,
+    side: Color,
+    trace: &mut T,
+) -> EvalScore {
+    let mut eval = EvalScore::zero();
+
+    for square in board.occupancy[side] {
+        let piece = board.get_piece_at(square);
+        let ptype = piece.ptype();
+        let psqt_idx = square.psqt_idx(side);
+
+        add_material(&mut eval, trace, side, ptype, EVAL_PARAMS.material[ptype]);
+        add_psqt(
+            &mut eval,
+            trace,
+            side,
+            ptype,
+            psqt_idx,
+            EVAL_PARAMS.psqt[ptype][psqt_idx],
+        );
+    }
+
+    eval
+}
+
+fn evaluate_pawns<T: Trace>(
+    board: &Board,
+    _ctx: &mut EvalContext,
+    movegen: &MoveGenerator,
+    side: Color,
+    trace: &mut T,
+) -> EvalScore {
+    let mut eval = EvalScore::zero();
+    let pawns = board.bitboards[side][PieceType::Pawn];
+    let enemy_pawns = board.bitboards[!side][PieceType::Pawn];
+
+    for square in pawns {
+        let file = square.file();
+        let adjacent_file_mask = file.adjacent_file_mask();
+        let stop_square = match side {
+            Color::White => Square::from_idx(square as usize + 8),
+            Color::Black => Square::from_idx(square as usize - 8),
+        };
+        let push_threat = enemy_pawns & movegen.get_pawn_attack_mask(stop_square, side);
+        let supports = pawns & movegen.get_pawn_attack_mask(square, !side);
+
+        // Penalize isolated pawns
+        if (pawns & adjacent_file_mask).is_empty() {
+            add_isolated_pawn(
+                &mut eval,
+                trace,
+                side,
+                file as usize,
+                EVAL_PARAMS.isolated_pawn[file as usize],
+            );
+            // Penalize backward pawns
+        } else if supports.is_empty() && !push_threat.is_empty() {
+            add_backward_pawn(
+                &mut eval,
+                trace,
+                side,
+                file as usize,
+                EVAL_PARAMS.backward_pawn[file as usize],
+            );
+            // Bonus for connected pawns
+        } else if !supports.is_empty() {
+            let connected_idx = square.psqt_idx(side);
+            add_connected_pawn(
+                &mut eval,
+                trace,
+                side,
+                connected_idx,
+                EVAL_PARAMS.connected_pawn[connected_idx],
+            );
+        }
+
+        // Penalize doubled pawns
+        if (pawns & Bitboard::from_file(file)).count_ones() > 1 {
+            add_doubled_pawn(
+                &mut eval,
+                trace,
+                side,
+                file as usize,
+                EVAL_PARAMS.doubled_pawn[file as usize],
+                1,
+            );
+        }
+    }
+
+    eval
+}
+
+fn add_material(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    ptype: PieceType,
+    value: EvalScore,
+) {
+    *eval += value;
+    trace.term(side, EvalTerm::Material(ptype), 1);
+}
+
+fn add_psqt(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    ptype: PieceType,
+    psqt_idx: usize,
+    value: EvalScore,
+) {
+    *eval += value;
+    trace.term(side, EvalTerm::Psqt(ptype, psqt_idx), 1);
+}
+
+fn add_isolated_pawn(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    file: usize,
+    value: EvalScore,
+) {
+    *eval += value;
+    trace.term(side, EvalTerm::IsolatedPawn(file), 1);
+}
+
+fn add_doubled_pawn(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    file: usize,
+    value: EvalScore,
+    count: EvalValue,
+) {
+    *eval += value * count;
+    trace.term(side, EvalTerm::DoubledPawn(file), count);
+}
+
+fn add_backward_pawn(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    file: usize,
+    value: EvalScore,
+) {
+    *eval += value;
+    trace.term(side, EvalTerm::BackwardPawn(file), 1);
+}
+
+fn add_connected_pawn(
+    eval: &mut EvalScore,
+    trace: &mut impl Trace,
+    side: Color,
+    square: usize,
+    value: EvalScore,
+) {
+    *eval += value;
+    trace.term(side, EvalTerm::ConnectedPawn(square), 1);
+}
+
+pub fn psqt_value(square: Square, piece: Piece) -> EvalScore {
+    EVAL_PARAMS.piece_square_value(square, piece)
 }
 
 pub fn piece_value(piece: Piece) -> u16 {
     match piece {
         Piece::None => 0,
-        _ => PIECE_VALUES[piece.ptype()] as u16,
+        _ => EVAL_PARAMS.material[piece.ptype()].mg as u16,
     }
 }
 
@@ -106,11 +274,15 @@ pub fn phase_value(piece: Piece) -> u8 {
     }
 }
 
+pub(crate) fn eval_to_score(eval: EvalValue) -> Score {
+    eval.clamp(Score::MIN as EvalValue, Score::MAX as EvalValue) as Score
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        board::square::Square,
+        board::square::{File, Square},
         movegen::{
             MoveGenerator,
             moves::{Move, MoveType},
@@ -121,14 +293,13 @@ mod tests {
     fn initializes_starting_evaluation() {
         let board =
             Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
 
         assert_eq!(board.state.evaluation, Evaluation::new(&board));
+        let mut trace = NoTrace;
         assert_eq!(
-            board
-                .state
-                .evaluation
-                .score(Color::White, board.state.game_phase),
-            0
+            evaluate_static(&board, &movegen),
+            evaluate(&board, &movegen, &mut trace)
         );
         assert_eq!(board.state.game_phase, MAX_GAME_PHASE);
     }
@@ -137,21 +308,298 @@ mod tests {
     fn evaluation_scores_material_advantage() {
         let white_queen = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
         let black_queen = Board::from_fen("4kq2/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
 
-        assert!(
-            white_queen
-                .state
-                .evaluation
-                .score(Color::White, white_queen.state.game_phase)
-                > 900
+        assert!(evaluate_static(&white_queen, &movegen) > 900);
+        assert!(evaluate_static(&black_queen, &movegen) < -900);
+    }
+
+    #[test]
+    fn parameterized_eval_matches_incremental_eval() {
+        for fen in [
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "4k3/8/8/8/8/8/8/4KQ2 w - - 0 1",
+            "4kq2/8/8/8/8/8/8/4K3 w - - 0 1",
+            "8/8/8/3n4/4B3/8/8/4K2k b - - 0 1",
+        ] {
+            let board = Board::from_fen(fen).unwrap();
+            let movegen = MoveGenerator::new();
+            let mut trace = NoTrace;
+
+            assert_eq!(
+                evaluate(&board, &movegen, &mut trace),
+                evaluate_static(&board, &movegen)
+            );
+        }
+    }
+
+    #[test]
+    fn feature_trace_still_rebuilds_features() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(trace.material_feature(PieceType::Queen), 1);
+    }
+
+    #[test]
+    fn trace_records_lone_white_queen_features() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(trace.material_feature(PieceType::Queen), 1);
+        assert_eq!(
+            trace.psqt_feature(PieceType::Queen, Square::F1.psqt_idx(Color::White)),
+            1
         );
-        assert!(
-            black_queen
-                .state
-                .evaluation
-                .score(Color::White, black_queen.state.game_phase)
-                < -900
+        assert_eq!(trace.material_feature(PieceType::King), 0);
+    }
+
+    #[test]
+    fn trace_records_mirrored_black_piece_with_opposite_sign() {
+        let board = Board::from_fen("4kq2/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(trace.material_feature(PieceType::Queen), -1);
+        assert_eq!(
+            trace.psqt_feature(PieceType::Queen, Square::F8.psqt_idx(Color::Black)),
+            -1
         );
+        assert_eq!(trace.material_feature(PieceType::King), 0);
+    }
+
+    #[test]
+    fn trace_records_isolated_pawns_by_file() {
+        let board = Board::from_fen("4k3/7p/8/8/8/8/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(trace.isolated_pawn_feature(File::A as usize), 1);
+        assert_eq!(trace.isolated_pawn_feature(File::H as usize), -1);
+        assert_eq!(trace.isolated_pawn_feature(File::B as usize), 0);
+    }
+
+    #[test]
+    fn trace_records_doubled_pawns_by_file() {
+        let board = Board::from_fen("4k3/7p/7p/8/8/P7/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(trace.doubled_pawn_feature(File::A as usize), 2);
+        assert_eq!(trace.doubled_pawn_feature(File::H as usize), -2);
+        assert_eq!(trace.doubled_pawn_feature(File::B as usize), 0);
+    }
+
+    #[test]
+    fn trace_records_backward_pawns_by_file() {
+        let board = Board::from_fen("4k3/8/8/2p1p3/8/2PP4/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(trace.backward_pawn_feature(File::D as usize), 1);
+    }
+
+    #[test]
+    fn trace_records_black_backward_pawn_with_opposite_sign() {
+        let board = Board::from_fen("4k3/8/2pp4/8/2P1P3/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(trace.backward_pawn_feature(File::D as usize), -1);
+    }
+
+    #[test]
+    fn trace_records_connected_pawns_by_square() {
+        let board = Board::from_fen("4k3/8/8/8/8/3P4/2P5/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(
+            trace.connected_pawn_feature(Square::D3.psqt_idx(Color::White)),
+            1
+        );
+        assert_eq!(
+            trace.connected_pawn_feature(Square::D4.psqt_idx(Color::White)),
+            0
+        );
+    }
+
+    #[test]
+    fn trace_records_black_connected_pawn_with_opposite_sign() {
+        let board = Board::from_fen("4k3/2p5/3p4/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+
+        evaluate(&board, &movegen, &mut trace);
+
+        assert_eq!(
+            trace.connected_pawn_feature(Square::D6.psqt_idx(Color::Black)),
+            -1
+        );
+    }
+
+    #[test]
+    fn pawn_eval_scores_isolated_pawns_by_file() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EVAL_PARAMS.isolated_pawn[File::A as usize]
+        );
+    }
+
+    #[test]
+    fn pawn_eval_does_not_score_connected_pawns_as_isolated() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/PP6/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EvalScore::zero()
+        );
+    }
+
+    #[test]
+    fn pawn_eval_scores_each_doubled_isolated_pawn() {
+        let board = Board::from_fen("4k3/8/8/8/8/P7/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EVAL_PARAMS.isolated_pawn[File::A as usize] * 2
+                + EVAL_PARAMS.doubled_pawn[File::A as usize] * 2
+        );
+    }
+
+    #[test]
+    fn pawn_eval_scores_each_stacked_pawn_as_doubled() {
+        let board = Board::from_fen("4k3/8/8/8/P7/P7/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EVAL_PARAMS.isolated_pawn[File::A as usize] * 3
+                + EVAL_PARAMS.doubled_pawn[File::A as usize] * 3
+        );
+    }
+
+    #[test]
+    fn pawn_eval_scores_backward_pawn() {
+        let board = Board::from_fen("4k3/8/8/2p1p3/8/2PP4/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EVAL_PARAMS.backward_pawn[File::D as usize]
+        );
+    }
+
+    #[test]
+    fn pawn_eval_scores_supported_pawn_as_connected_not_backward() {
+        let board = Board::from_fen("4k3/8/8/2p1p3/8/3P4/2P5/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EVAL_PARAMS.connected_pawn[Square::D3.psqt_idx(Color::White)]
+        );
+    }
+
+    #[test]
+    fn pawn_eval_scores_connected_pawn() {
+        let board = Board::from_fen("4k3/8/8/8/8/3P4/2P5/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        assert_eq!(
+            evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut trace),
+            EVAL_PARAMS.connected_pawn[Square::D3.psqt_idx(Color::White)]
+        );
+    }
+
+    #[test]
+    fn static_eval_includes_pawn_structure_regression() {
+        let board = Board::from_fen("4k3/8/8/8/8/P7/P7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let base_eval = board.state.evaluation.scores[Color::White]
+            - board.state.evaluation.scores[Color::Black];
+        let expected = (base_eval
+            + EVAL_PARAMS.isolated_pawn[File::A as usize] * 2
+            + EVAL_PARAMS.doubled_pawn[File::A as usize] * 2)
+            .tapered(board.state.game_phase);
+
+        assert_eq!(evaluate_static(&board, &movegen), expected);
+        assert_ne!(
+            evaluate_static(&board, &movegen),
+            board.state.evaluation.score(&board)
+        );
+    }
+
+    #[test]
+    fn tapered_trace_features_match_white_pov_eval() {
+        let board = Board::from_fen("4kq2/8/8/8/8/8/8/4KQ2 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let mut trace = FeatureVectorTrace::new();
+        let mut no_trace = NoTrace;
+        let mut ctx = EvalContext;
+
+        evaluate(&board, &movegen, &mut trace);
+
+        let mut eval = EvalScore::zero();
+        if <NoTrace as Trace>::USE_INCREMENTAL_EVAL {
+            eval += board.state.evaluation.scores[Color::White]
+                - board.state.evaluation.scores[Color::Black];
+        } else {
+            eval += evaluate_psqt(&board, &mut ctx, Color::White, &mut no_trace)
+                - evaluate_psqt(&board, &mut ctx, Color::Black, &mut no_trace);
+        }
+        eval += evaluate_pawns(&board, &mut ctx, &movegen, Color::White, &mut no_trace)
+            - evaluate_pawns(&board, &mut ctx, &movegen, Color::Black, &mut no_trace);
+
+        let phase = board.state.game_phase.min(MAX_GAME_PHASE) as f64;
+        let expected = (eval.mg as f64 * phase + eval.eg as f64 * (MAX_GAME_PHASE as f64 - phase))
+            / MAX_GAME_PHASE as f64;
+        let weights = EVAL_PARAMS.weights();
+        let actual = trace
+            .tapered_features(board.state.game_phase)
+            .iter()
+            .zip(weights)
+            .map(|(feature, weight)| feature * weight as f64)
+            .sum::<f64>();
+
+        assert!((actual - expected).abs() < 1e-9);
     }
 
     #[test]

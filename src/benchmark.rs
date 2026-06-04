@@ -29,7 +29,7 @@ const POSITIONS: &[BenchPosition] = &[
     },
 ];
 
-pub fn run() {
+pub fn run(ci: bool) {
     let mut nodes = 0;
     let mut elapsed = Duration::from_secs(0);
 
@@ -45,5 +45,9 @@ pub fn run() {
 
     let nps = (u128::from(nodes) * 1_000_000_000 / elapsed.as_nanos()) as u64;
 
-    println!("{nodes} nodes {nps} nps")
+    if !ci {
+        println!("{nodes} nodes {nps} nps");
+    } else {
+        println!("bench {nodes}");
+    }
 }
