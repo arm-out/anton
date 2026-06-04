@@ -30,6 +30,48 @@ pub struct MoveGenerator {
     bishop_magics: [Magic; Square::COUNT],
 }
 
+pub trait GenType {
+    const CAPTURES: bool;
+    const QUIETS: bool;
+    const PROMOTIONS: bool;
+    const CASTLING: bool;
+    const EVASIONS: bool = false;
+}
+
+pub struct All;
+pub struct Noisy;
+pub struct Quiet;
+pub struct Evasions;
+
+impl GenType for All {
+    const CAPTURES: bool = true;
+    const QUIETS: bool = true;
+    const PROMOTIONS: bool = true;
+    const CASTLING: bool = true;
+}
+
+impl GenType for Noisy {
+    const CAPTURES: bool = true;
+    const QUIETS: bool = false;
+    const PROMOTIONS: bool = true;
+    const CASTLING: bool = false;
+}
+
+impl GenType for Quiet {
+    const CAPTURES: bool = false;
+    const QUIETS: bool = true;
+    const PROMOTIONS: bool = false;
+    const CASTLING: bool = true;
+}
+
+impl GenType for Evasions {
+    const CAPTURES: bool = false;
+    const QUIETS: bool = false;
+    const PROMOTIONS: bool = false;
+    const CASTLING: bool = false;
+    const EVASIONS: bool = true;
+}
+
 #[derive(Copy, Clone)]
 pub enum Slider {
     Rook,
@@ -64,32 +106,44 @@ impl MoveGenerator {
         movegen
     }
 
-    pub fn gen_moves(&self, board: &Board) -> MoveList {
-        let mask = !board.our_pieces(); // Squares we can move to
+    pub fn gen_moves<G: GenType>(&self, board: &Board) -> MoveList {
+        if G::EVASIONS {
+            return self.gen_evasions(board);
+        }
+
         let mut ml = MoveList::default();
         let color = board.us();
 
-        self.gen_king_moves(board, &mut ml, mask, color);
-        self.gen_castling_moves(board, &mut ml, color);
-        self.gen_knight_moves(board, &mut ml, mask, color);
-        self.gen_bishop_moves(board, &mut ml, mask, color);
-        self.gen_rook_moves(board, &mut ml, mask, color);
-        self.gen_queen_moves(board, &mut ml, mask, color);
-
-        self.gen_pawn_pushes(board, &mut ml, color);
-        self.gen_pawn_captures(board, &mut ml, color);
+        self.gen_king_moves::<G>(board, &mut ml, color);
+        if G::CASTLING {
+            self.gen_castling_moves(board, &mut ml, color);
+        }
+        self.gen_knight_moves::<G>(board, &mut ml, color);
+        self.gen_bishop_moves::<G>(board, &mut ml, color);
+        self.gen_rook_moves::<G>(board, &mut ml, color);
+        self.gen_queen_moves::<G>(board, &mut ml, color);
+        self.gen_pawn_moves::<G>(board, &mut ml, color);
 
         ml
     }
 
+    fn gen_evasions(&self, _board: &Board) -> MoveList {
+        todo!("evasion move generation")
+    }
+
     // ---------------------- MOVE GENERATION ---------------------
 
-    fn gen_king_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+    fn gen_king_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
         let bb_piece = board.get_piece(PieceType::King, color);
 
         for square in bb_piece {
-            let bb_moves = self.king_moves[square] & mask;
-            self.add_moves(board, ml, square, bb_moves, MoveType::Quiet);
+            let attacks = self.king_moves[square];
+            if G::QUIETS {
+                self.add_moves(ml, square, attacks & !board.get_occupancy(), MoveType::Quiet);
+            }
+            if G::CAPTURES {
+                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+            }
         }
     }
 
@@ -175,49 +229,74 @@ impl MoveGenerator {
         true
     }
 
-    fn gen_knight_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+    fn gen_knight_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
         let bb_piece = board.get_piece(PieceType::Knight, color);
         for square in bb_piece {
-            let bb_moves = self.knight_moves[square] & mask;
-            self.add_moves(board, ml, square, bb_moves, MoveType::Quiet);
+            let attacks = self.knight_moves[square];
+            if G::QUIETS {
+                self.add_moves(ml, square, attacks & !board.get_occupancy(), MoveType::Quiet);
+            }
+            if G::CAPTURES {
+                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+            }
         }
     }
 
-    fn gen_rook_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+    fn gen_rook_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
         let bb_piece = board.get_piece(PieceType::Rook, color);
         let bb_blockers = board.get_occupancy();
 
         for square in bb_piece {
-            let bb_moves = self.get_rook_attacks(square, bb_blockers) & mask;
-            self.add_moves(board, ml, square, bb_moves, MoveType::Quiet);
+            let attacks = self.get_rook_attacks(square, bb_blockers);
+            if G::QUIETS {
+                self.add_moves(ml, square, attacks & !bb_blockers, MoveType::Quiet);
+            }
+            if G::CAPTURES {
+                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+            }
         }
     }
 
-    fn gen_bishop_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+    fn gen_bishop_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
         let bb_piece = board.get_piece(PieceType::Bishop, color);
         let bb_blockers = board.get_occupancy();
 
         for square in bb_piece {
-            let bishop_attacks = self.get_bishop_attacks(square, bb_blockers);
-            let bb_moves = bishop_attacks & mask;
-            self.add_moves(board, ml, square, bb_moves, MoveType::Quiet);
+            let attacks = self.get_bishop_attacks(square, bb_blockers);
+            if G::QUIETS {
+                self.add_moves(ml, square, attacks & !bb_blockers, MoveType::Quiet);
+            }
+            if G::CAPTURES {
+                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+            }
         }
     }
 
-    fn gen_queen_moves(&self, board: &Board, ml: &mut MoveList, mask: Bitboard, color: Color) {
+    fn gen_queen_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
         let bb_piece = board.get_piece(PieceType::Queen, color);
         let bb_blockers = board.get_occupancy();
 
         for square in bb_piece {
-            let bb_moves = self.get_queen_attacks(square, bb_blockers) & mask;
-            self.add_moves(board, ml, square, bb_moves, MoveType::Quiet);
+            let attacks = self.get_queen_attacks(square, bb_blockers);
+            if G::QUIETS {
+                self.add_moves(ml, square, attacks & !bb_blockers, MoveType::Quiet);
+            }
+            if G::CAPTURES {
+                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+            }
         }
     }
 
-    fn gen_pawn_pushes(&self, board: &Board, ml: &mut MoveList, color: Color) {
+    fn gen_pawn_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
         let bb_empty = !board.get_occupancy();
         let bb_promo_rank = Bitboard::promotion_rank(color);
         let bb_fourth_rank = Bitboard::fourth_rank(color);
+        let bb_opponent = board.their_pieces();
+        let ep_square = board.get_ep_square();
+        let bb_ep_square = match ep_square {
+            Square::None => Bitboard(0),
+            _ => Bitboard::from_square(ep_square),
+        };
         let dir: i8 = if color == Color::White { 8 } else { -8 };
         let bb_pieces = board.get_piece(PieceType::Pawn, color);
 
@@ -239,31 +318,23 @@ impl MoveGenerator {
             let double_push = two_steps;
             let promos = one_step & bb_promo_rank;
 
-            self.add_moves(board, ml, square, push, MoveType::Quiet);
-            self.add_moves(board, ml, square, double_push, MoveType::DoublePawnPush);
-            self.add_promotion(ml, square, promos, false);
-        }
-    }
-
-    fn gen_pawn_captures(&self, board: &Board, ml: &mut MoveList, color: Color) {
-        let bb_opponent = board.their_pieces();
-        let bb_promo_rank = Bitboard::promotion_rank(color);
-        let ep_square = board.get_ep_square();
-        let bb_ep_square = match ep_square {
-            Square::None => Bitboard(0),
-            _ => Bitboard::from_square(ep_square),
-        };
-        let bb_pieces = board.get_piece(PieceType::Pawn, color);
-
-        for square in bb_pieces {
             let moves = self.pawn_attacks[color][square];
             let captures = moves & bb_opponent & !bb_promo_rank;
             let ep_captures = moves & bb_ep_square;
             let promo_captures = moves & bb_opponent & bb_promo_rank;
 
-            self.add_moves(board, ml, square, captures, MoveType::Quiet);
-            self.add_moves(board, ml, square, ep_captures, MoveType::EnPassant);
-            self.add_promotion(ml, square, promo_captures, true);
+            if G::QUIETS {
+                self.add_moves(ml, square, push, MoveType::Quiet);
+                self.add_moves(ml, square, double_push, MoveType::DoublePawnPush);
+            }
+            if G::CAPTURES {
+                self.add_moves(ml, square, captures, MoveType::Capture);
+                self.add_moves(ml, square, ep_captures, MoveType::EnPassant);
+            }
+            if G::PROMOTIONS {
+                self.add_promotion(ml, square, promos, false);
+                self.add_promotion(ml, square, promo_captures, true);
+            }
         }
     }
 
@@ -282,31 +353,8 @@ impl MoveGenerator {
         }
     }
 
-    fn add_moves(
-        &self,
-        board: &Board,
-        ml: &mut MoveList,
-        from: Square,
-        to: Bitboard,
-        kind: MoveType,
-    ) {
-        // All genereic moves
-        if kind == MoveType::Quiet {
-            for square in to {
-                let mut flags: u8 = kind as u8;
-                // Set capture flag
-                if board.mailbox[square] != Piece::None {
-                    flags |= 0b0100;
-                }
-
-                let m = Move::new(from, square, MoveType::from(flags));
-                ml.push(m);
-            }
-        } else {
-            if to == Bitboard(0) {
-                return;
-            }
-            let square = Bitboard::square_from_bb(to);
+    fn add_moves(&self, ml: &mut MoveList, from: Square, to: Bitboard, kind: MoveType) {
+        for square in to {
             let m = Move::new(from, square, kind);
             ml.push(m);
         }
@@ -523,6 +571,82 @@ impl MoveGenerator {
 mod tests {
     use super::*;
 
+    fn move_values(moves: &MoveList) -> Vec<u16> {
+        let mut values = (0..moves.len()).map(|idx| moves.get(idx).0).collect::<Vec<_>>();
+        values.sort_unstable();
+        values
+    }
+
+    fn is_promotion(m: Move) -> bool {
+        matches!(
+            m.kind(),
+            MoveType::NPromotion
+                | MoveType::BPromotion
+                | MoveType::RPromotion
+                | MoveType::QPromotion
+                | MoveType::NPromoCapture
+                | MoveType::BPromoCapture
+                | MoveType::RPromoCapture
+                | MoveType::QPromoCapture
+        )
+    }
+
+    #[test]
+    fn all_moves_are_partitioned_into_noisy_and_quiet() {
+        let board =
+            Board::from_fen("1r2k3/P6r/8/3pP3/8/8/8/R3K2R w KQ d6 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let all = movegen.gen_moves::<All>(&board);
+        let noisy = movegen.gen_moves::<Noisy>(&board);
+        let quiet = movegen.gen_moves::<Quiet>(&board);
+        let mut staged = move_values(&noisy);
+        staged.extend(move_values(&quiet));
+        staged.sort_unstable();
+
+        assert_eq!(move_values(&all), staged);
+    }
+
+    #[test]
+    fn noisy_moves_include_only_captures_and_promotions() {
+        let board =
+            Board::from_fen("1r2k3/P6r/8/3pP3/8/8/8/R3K2R w KQ d6 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let moves = movegen.gen_moves::<Noisy>(&board);
+
+        assert!((0..moves.len()).all(|idx| {
+            let m = moves.get(idx);
+            m.is_capture() || is_promotion(m)
+        }));
+        assert!((0..moves.len()).any(|idx| moves.get(idx).kind() == MoveType::EnPassant));
+        assert!((0..moves.len()).any(|idx| {
+            let m = moves.get(idx);
+            is_promotion(m) && !m.is_capture()
+        }));
+        assert!((0..moves.len()).any(|idx| {
+            let m = moves.get(idx);
+            is_promotion(m) && m.is_capture()
+        }));
+    }
+
+    #[test]
+    fn quiet_moves_exclude_captures_and_promotions() {
+        let board =
+            Board::from_fen("1r2k3/P6r/8/3pP3/8/8/8/R3K2R w KQ d6 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let moves = movegen.gen_moves::<Quiet>(&board);
+
+        assert!((0..moves.len()).all(|idx| {
+            let m = moves.get(idx);
+            !m.is_capture() && !is_promotion(m)
+        }));
+        assert!((0..moves.len()).any(|idx| {
+            matches!(
+                moves.get(idx).kind(),
+                MoveType::CastleKingside | MoveType::CastleQueenside
+            )
+        }));
+    }
+
     #[test]
     fn test_startpos_sliders_are_blocked() {
         let board =
@@ -554,7 +678,7 @@ mod tests {
             Board::from_fen("rnbqkbnr/pppppppp/8/8/8/N7/PPPPPPPP/R1BQKBNR b KQkq - 1 1").unwrap();
         let movegen = MoveGenerator::new();
 
-        assert_eq!(movegen.gen_moves(&board).len(), 20);
+        assert_eq!(movegen.gen_moves::<All>(&board).len(), 20);
     }
 
     #[test]
@@ -592,7 +716,7 @@ mod tests {
     fn test_castling_moves_are_generated_when_path_is_clear() {
         let board = Board::from_fen("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1").unwrap();
         let movegen = MoveGenerator::new();
-        let moves = movegen.gen_moves(&board);
+        let moves = movegen.gen_moves::<All>(&board);
         let mut kingside = false;
         let mut queenside = false;
 

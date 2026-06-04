@@ -1,7 +1,7 @@
 use crate::{
     board::{Board, piece::PieceType, square::Square},
     evaluation::{Score, evaluate_static},
-    movegen::MoveGenerator,
+    movegen::{All, MoveGenerator, Noisy},
 };
 
 use super::{
@@ -14,7 +14,6 @@ pub(super) const MATE_SCORE: Score = 30_000;
 pub(super) const ASPIRATION_WINDOW: Score = 50;
 pub(super) const ASPIRATION_MAX_WINDOW: Score = INF;
 const DRAW_SCORE: Score = 0;
-const QUIET_MOVE_SCORE: i16 = 0;
 const ROOT_PLY: u8 = 0;
 const REVERSE_FUTILITY_MAX_DEPTH: u8 = 3;
 const REVERSE_FUTILITY_MARGIN: Score = 80;
@@ -46,7 +45,7 @@ impl Search {
         let mut best_score = -INF;
         let original_alpha = alpha;
         let mut alpha = alpha;
-        let mut moves = refs.movegen.gen_moves(refs.board);
+        let mut moves = refs.movegen.gen_moves::<All>(refs.board);
         moves.score_moves(refs.board, tt_move);
         let mut legal_moves = 0;
 
@@ -162,7 +161,7 @@ impl Search {
         let tt_move = tt_entry.map(|entry| entry.best_move());
         let mut best_move = None;
         let mut best_score = -INF;
-        let mut moves = refs.movegen.gen_moves(refs.board);
+        let mut moves = refs.movegen.gen_moves::<All>(refs.board);
         moves.score_moves(refs.board, tt_move);
         let mut legal_moves = 0;
 
@@ -265,7 +264,11 @@ impl Search {
             best_score = alpha;
         }
 
-        let mut moves = refs.movegen.gen_moves(refs.board);
+        let mut moves = if in_check {
+            refs.movegen.gen_moves::<All>(refs.board)
+        } else {
+            refs.movegen.gen_moves::<Noisy>(refs.board)
+        };
         moves.score_moves(refs.board, None);
         let mut legal_moves = 0;
 
@@ -279,11 +282,7 @@ impl Search {
                 };
             }
 
-            let (m, score) = moves.pick_next_scored(i);
-            // We want to check all legal evasions if in check
-            if !in_check && score <= QUIET_MOVE_SCORE {
-                break;
-            }
+            let m = moves.pick_next(i);
 
             if !refs.board.make(m, refs.movegen) {
                 continue;

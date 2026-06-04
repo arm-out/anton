@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use crate::{
     board::Board,
     evaluation::Score,
-    movegen::{MoveGenerator, moves::Move},
+    movegen::{All, MoveGenerator, moves::Move},
 };
 
 pub use self::transposition::DEFAULT_TT_SIZE_MB;
@@ -236,7 +236,7 @@ impl Search {
     }
 
     fn find_legal_move(&self, board: &Board, uci_move: &str) -> Option<Move> {
-        let moves = self.movegen.gen_moves(board);
+        let moves = self.movegen.gen_moves::<All>(board);
 
         for i in 0..moves.len() {
             let m = moves.get(i);

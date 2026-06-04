@@ -1,4 +1,7 @@
-use anton::{board::Board, movegen::MoveGenerator};
+use anton::{
+    board::Board,
+    movegen::{All, MoveGenerator},
+};
 
 pub fn perft(board: &mut Board, depth: u8, mg: &MoveGenerator) -> u64 {
     let mut leaf_nodes = 0;
@@ -6,7 +9,7 @@ pub fn perft(board: &mut Board, depth: u8, mg: &MoveGenerator) -> u64 {
         return 1;
     }
 
-    let ml = mg.gen_moves(board);
+    let ml = mg.gen_moves::<All>(board);
 
     for i in 0..ml.len() {
         let m = ml.get(i);
