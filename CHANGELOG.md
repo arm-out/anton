@@ -14,6 +14,16 @@ Games | N: 610 W: 320 L: 212 D: 78
 Penta | [40, 21, 116, 47, 81]
 ```
 
+- Tuned eval terms for isolated, connected, backward and doubled pawns
+
+```
+Elo   | 24.13 +- 11.21 (95%)
+SPRT  | 10.0+0.10s Threads=1 Hash=256MB
+LLR   | 2.97 (-2.94, 2.94) [0.00, 5.00]
+Games | N: 2884 W: 1286 L: 1086 D: 512
+Penta | [183, 196, 579, 206, 278]
+```
+
 ### Misc
 
 - Texel tuner based on Adam Grant's Ethereal tuner using AdaGrad descent
