@@ -1,4 +1,7 @@
-use anton::{board::Board, movegen::MoveGenerator};
+use anton::{
+    board::Board,
+    movegen::{All, MoveGenerator},
+};
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
 const POSITIONS: &[(&str, &str)] = &[
@@ -25,7 +28,7 @@ fn bench_gen_moves(c: &mut Criterion) {
 
         group.bench_function(name, |b| {
             b.iter(|| {
-                let moves = movegen.gen_moves(black_box(&board));
+                let moves = movegen.gen_moves::<All>(black_box(&board));
                 black_box(moves.len())
             });
         });

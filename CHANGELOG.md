@@ -3,6 +3,7 @@
 ### Misc
 
 - Parse `ucinewgame` command
+- Staged movegen
 
 ## v0.6.0
 
