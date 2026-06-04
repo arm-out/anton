@@ -1,3 +1,9 @@
+## v0.7.0
+
+### Misc
+
+- Parse `ucinewgame` command
+
 ## v0.6.0
 
 ### Regression
