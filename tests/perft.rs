@@ -1,6 +1,6 @@
 use anton::{
-    board::Board,
-    movegen::{All, MoveGenerator},
+    board::{Board, piece::PieceType, square::Square},
+    movegen::{All, Evasions, MoveGenerator},
 };
 
 pub fn perft(board: &mut Board, depth: u8, mg: &MoveGenerator) -> u64 {
@@ -9,7 +9,14 @@ pub fn perft(board: &mut Board, depth: u8, mg: &MoveGenerator) -> u64 {
         return 1;
     }
 
-    let ml = mg.gen_moves::<All>(board);
+    let king = board.bitboards[board.us()][PieceType::King];
+    let king_square = Square::from_idx(king.0.trailing_zeros() as usize);
+
+    let ml = if mg.is_attacked(board, king_square, board.them()) {
+        mg.gen_moves::<Evasions>(board)
+    } else {
+        mg.gen_moves::<All>(board)
+    };
 
     for i in 0..ml.len() {
         let m = ml.get(i);

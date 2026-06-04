@@ -28,6 +28,7 @@ pub struct MoveGenerator {
     bishop_moves: Vec<Bitboard>,
     rook_magics: [Magic; Square::COUNT],
     bishop_magics: [Magic; Square::COUNT],
+    between: [[Bitboard; Square::COUNT]; Square::COUNT],
 }
 
 pub trait GenType {
@@ -65,9 +66,9 @@ impl GenType for Quiet {
 }
 
 impl GenType for Evasions {
-    const CAPTURES: bool = false;
-    const QUIETS: bool = false;
-    const PROMOTIONS: bool = false;
+    const CAPTURES: bool = true;
+    const QUIETS: bool = true;
+    const PROMOTIONS: bool = true;
     const CASTLING: bool = false;
     const EVASIONS: bool = true;
 }
@@ -91,6 +92,7 @@ impl MoveGenerator {
             bishop_moves: vec![Bitboard(0); BISHOP_TABLE_SIZE],
             rook_magics: ROOK_MAGICS,
             bishop_magics: BISHOP_MAGICS,
+            between: [[Bitboard(0); Square::COUNT]; Square::COUNT],
         };
 
         for square in 0..Square::COUNT {
@@ -102,6 +104,7 @@ impl MoveGenerator {
 
         movegen.init_slider_moves(Slider::Rook);
         movegen.init_slider_moves(Slider::Bishop);
+        movegen.init_between();
 
         movegen
     }
@@ -113,36 +116,82 @@ impl MoveGenerator {
 
         let mut ml = MoveList::default();
         let color = board.us();
+        let targets = Bitboard(u64::MAX);
 
-        self.gen_king_moves::<G>(board, &mut ml, color);
+        self.gen_king_moves::<G>(board, &mut ml, color, targets);
         if G::CASTLING {
             self.gen_castling_moves(board, &mut ml, color);
         }
-        self.gen_knight_moves::<G>(board, &mut ml, color);
-        self.gen_bishop_moves::<G>(board, &mut ml, color);
-        self.gen_rook_moves::<G>(board, &mut ml, color);
-        self.gen_queen_moves::<G>(board, &mut ml, color);
-        self.gen_pawn_moves::<G>(board, &mut ml, color);
+        self.gen_knight_moves::<G>(board, &mut ml, color, targets);
+        self.gen_bishop_moves::<G>(board, &mut ml, color, targets);
+        self.gen_rook_moves::<G>(board, &mut ml, color, targets);
+        self.gen_queen_moves::<G>(board, &mut ml, color, targets);
+        self.gen_pawn_moves::<G>(board, &mut ml, color, targets);
 
         ml
     }
 
-    fn gen_evasions(&self, _board: &Board) -> MoveList {
-        todo!("evasion move generation")
+    fn gen_evasions(&self, board: &Board) -> MoveList {
+        let mut ml = MoveList::default();
+        let color = board.us();
+        let king_square = Bitboard::square_from_bb(board.get_piece(PieceType::King, color));
+        let checkers = self.attackers_to(board, king_square, board.them());
+
+        debug_assert!(!checkers.is_empty());
+
+        self.gen_king_moves::<Evasions>(board, &mut ml, color, Bitboard(u64::MAX));
+
+        if checkers.count_ones() > 1 {
+            return ml;
+        }
+
+        let checker_square = Bitboard::square_from_bb(checkers);
+        let checker = board.get_piece_at(checker_square);
+        let mut targets = checkers;
+        if matches!(
+            checker.ptype(),
+            PieceType::Bishop | PieceType::Rook | PieceType::Queen
+        ) {
+            targets |= self.between[king_square][checker_square];
+        }
+
+        self.gen_knight_moves::<Evasions>(board, &mut ml, color, targets);
+        self.gen_bishop_moves::<Evasions>(board, &mut ml, color, targets);
+        self.gen_rook_moves::<Evasions>(board, &mut ml, color, targets);
+        self.gen_queen_moves::<Evasions>(board, &mut ml, color, targets);
+        self.gen_pawn_moves::<Evasions>(board, &mut ml, color, targets);
+
+        ml
     }
 
     // ---------------------- MOVE GENERATION ---------------------
 
-    fn gen_king_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
+    fn gen_king_moves<G: GenType>(
+        &self,
+        board: &Board,
+        ml: &mut MoveList,
+        color: Color,
+        targets: Bitboard,
+    ) {
         let bb_piece = board.get_piece(PieceType::King, color);
 
         for square in bb_piece {
             let attacks = self.king_moves[square];
             if G::QUIETS {
-                self.add_moves(ml, square, attacks & !board.get_occupancy(), MoveType::Quiet);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & !board.get_occupancy() & targets,
+                    MoveType::Quiet,
+                );
             }
             if G::CAPTURES {
-                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & board.their_pieces() & targets,
+                    MoveType::Capture,
+                );
             }
         }
     }
@@ -229,65 +278,135 @@ impl MoveGenerator {
         true
     }
 
-    fn gen_knight_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
+    fn gen_knight_moves<G: GenType>(
+        &self,
+        board: &Board,
+        ml: &mut MoveList,
+        color: Color,
+        targets: Bitboard,
+    ) {
         let bb_piece = board.get_piece(PieceType::Knight, color);
         for square in bb_piece {
             let attacks = self.knight_moves[square];
             if G::QUIETS {
-                self.add_moves(ml, square, attacks & !board.get_occupancy(), MoveType::Quiet);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & !board.get_occupancy() & targets,
+                    MoveType::Quiet,
+                );
             }
             if G::CAPTURES {
-                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & board.their_pieces() & targets,
+                    MoveType::Capture,
+                );
             }
         }
     }
 
-    fn gen_rook_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
+    fn gen_rook_moves<G: GenType>(
+        &self,
+        board: &Board,
+        ml: &mut MoveList,
+        color: Color,
+        targets: Bitboard,
+    ) {
         let bb_piece = board.get_piece(PieceType::Rook, color);
         let bb_blockers = board.get_occupancy();
 
         for square in bb_piece {
             let attacks = self.get_rook_attacks(square, bb_blockers);
             if G::QUIETS {
-                self.add_moves(ml, square, attacks & !bb_blockers, MoveType::Quiet);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & !bb_blockers & targets,
+                    MoveType::Quiet,
+                );
             }
             if G::CAPTURES {
-                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & board.their_pieces() & targets,
+                    MoveType::Capture,
+                );
             }
         }
     }
 
-    fn gen_bishop_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
+    fn gen_bishop_moves<G: GenType>(
+        &self,
+        board: &Board,
+        ml: &mut MoveList,
+        color: Color,
+        targets: Bitboard,
+    ) {
         let bb_piece = board.get_piece(PieceType::Bishop, color);
         let bb_blockers = board.get_occupancy();
 
         for square in bb_piece {
             let attacks = self.get_bishop_attacks(square, bb_blockers);
             if G::QUIETS {
-                self.add_moves(ml, square, attacks & !bb_blockers, MoveType::Quiet);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & !bb_blockers & targets,
+                    MoveType::Quiet,
+                );
             }
             if G::CAPTURES {
-                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & board.their_pieces() & targets,
+                    MoveType::Capture,
+                );
             }
         }
     }
 
-    fn gen_queen_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
+    fn gen_queen_moves<G: GenType>(
+        &self,
+        board: &Board,
+        ml: &mut MoveList,
+        color: Color,
+        targets: Bitboard,
+    ) {
         let bb_piece = board.get_piece(PieceType::Queen, color);
         let bb_blockers = board.get_occupancy();
 
         for square in bb_piece {
             let attacks = self.get_queen_attacks(square, bb_blockers);
             if G::QUIETS {
-                self.add_moves(ml, square, attacks & !bb_blockers, MoveType::Quiet);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & !bb_blockers & targets,
+                    MoveType::Quiet,
+                );
             }
             if G::CAPTURES {
-                self.add_moves(ml, square, attacks & board.their_pieces(), MoveType::Capture);
+                self.add_moves(
+                    ml,
+                    square,
+                    attacks & board.their_pieces() & targets,
+                    MoveType::Capture,
+                );
             }
         }
     }
 
-    fn gen_pawn_moves<G: GenType>(&self, board: &Board, ml: &mut MoveList, color: Color) {
+    fn gen_pawn_moves<G: GenType>(
+        &self,
+        board: &Board,
+        ml: &mut MoveList,
+        color: Color,
+        targets: Bitboard,
+    ) {
         let bb_empty = !board.get_occupancy();
         let bb_promo_rank = Bitboard::promotion_rank(color);
         let bb_fourth_rank = Bitboard::fourth_rank(color);
@@ -314,14 +433,14 @@ impl MoveGenerator {
                 (one_step >> -dir) & bb_empty & bb_fourth_rank
             };
 
-            let push = one_step & !bb_promo_rank;
-            let double_push = two_steps;
-            let promos = one_step & bb_promo_rank;
+            let push = one_step & !bb_promo_rank & targets;
+            let double_push = two_steps & targets;
+            let promos = one_step & bb_promo_rank & targets;
 
             let moves = self.pawn_attacks[color][square];
-            let captures = moves & bb_opponent & !bb_promo_rank;
+            let captures = moves & bb_opponent & !bb_promo_rank & targets;
             let ep_captures = moves & bb_ep_square;
-            let promo_captures = moves & bb_opponent & bb_promo_rank;
+            let promo_captures = moves & bb_opponent & bb_promo_rank & targets;
 
             if G::QUIETS {
                 self.add_moves(ml, square, push, MoveType::Quiet);
@@ -329,7 +448,12 @@ impl MoveGenerator {
             }
             if G::CAPTURES {
                 self.add_moves(ml, square, captures, MoveType::Capture);
-                self.add_moves(ml, square, ep_captures, MoveType::EnPassant);
+                let ep_targets = if G::EVASIONS {
+                    ep_captures
+                } else {
+                    ep_captures & targets
+                };
+                self.add_moves(ml, square, ep_targets, MoveType::EnPassant);
             }
             if G::PROMOTIONS {
                 self.add_promotion(ml, square, promos, false);
@@ -407,6 +531,36 @@ impl MoveGenerator {
                 (mask & !exclude) >> -shift
             };
             self.knight_moves[square] |= candidate;
+        }
+    }
+
+    fn init_between(&mut self) {
+        for from_idx in 0..Square::COUNT {
+            let from = Square::from_idx(from_idx);
+            for to_idx in 0..Square::COUNT {
+                let to = Square::from_idx(to_idx);
+                let file_delta = to.file() as i8 - from.file() as i8;
+                let rank_delta = to.rank() as i8 - from.rank() as i8;
+
+                if file_delta != 0 && rank_delta != 0 && file_delta.abs() != rank_delta.abs() {
+                    continue;
+                }
+
+                let file_step = file_delta.signum();
+                let rank_step = rank_delta.signum();
+                if file_step == 0 && rank_step == 0 {
+                    continue;
+                }
+
+                let mut square = from;
+                while let Some(next) = square.try_offset(file_step, rank_step) {
+                    if next == to {
+                        break;
+                    }
+                    self.between[from][to].set(next);
+                    square = next;
+                }
+            }
         }
     }
 
@@ -532,38 +686,22 @@ impl MoveGenerator {
         self.rook_moves[r_idx] ^ self.bishop_moves[b_idx]
     }
 
-    // Check if a square is attacked
-    // Use superpiece method with early returns
-    // https://www.chessprogramming.org/Square_Attacked_By#Any_Attack_by_Side
-    pub fn is_attacked(&self, board: &Board, square: Square, color: Color) -> bool {
+    pub fn attackers_to(&self, board: &Board, square: Square, color: Color) -> Bitboard {
         let attackers = board.bitboards[color];
         let occupancy = board.get_occupancy();
 
         let rooks_queen = attackers[PieceType::Rook] | attackers[PieceType::Queen];
-        let rook_attacks = self.get_rook_attacks(square, occupancy);
-        if rooks_queen & rook_attacks != Bitboard(0) {
-            return true;
-        }
-
         let bishops_queen = attackers[PieceType::Bishop] | attackers[PieceType::Queen];
-        let bishop_attacks = self.get_bishop_attacks(square, occupancy);
-        if bishops_queen & bishop_attacks != Bitboard(0) {
-            return true;
-        }
 
-        if self.knight_moves[square] & attackers[PieceType::Knight] != Bitboard(0) {
-            return true;
-        }
+        (self.get_rook_attacks(square, occupancy) & rooks_queen)
+            | (self.get_bishop_attacks(square, occupancy) & bishops_queen)
+            | (self.knight_moves[square] & attackers[PieceType::Knight])
+            | (self.pawn_attacks[!color][square] & attackers[PieceType::Pawn])
+            | (self.king_moves[square] & attackers[PieceType::King])
+    }
 
-        if self.pawn_attacks[!color][square] & attackers[PieceType::Pawn] != Bitboard(0) {
-            return true;
-        }
-
-        if self.king_moves[square] & attackers[PieceType::King] != Bitboard(0) {
-            return true;
-        }
-
-        false
+    pub fn is_attacked(&self, board: &Board, square: Square, color: Color) -> bool {
+        !self.attackers_to(board, square, color).is_empty()
     }
 }
 
@@ -572,7 +710,9 @@ mod tests {
     use super::*;
 
     fn move_values(moves: &MoveList) -> Vec<u16> {
-        let mut values = (0..moves.len()).map(|idx| moves.get(idx).0).collect::<Vec<_>>();
+        let mut values = (0..moves.len())
+            .map(|idx| moves.get(idx).0)
+            .collect::<Vec<_>>();
         values.sort_unstable();
         values
     }
@@ -591,10 +731,88 @@ mod tests {
         )
     }
 
+    fn legal_move_values<G: GenType>(board: &Board, movegen: &MoveGenerator) -> Vec<u16> {
+        let moves = movegen.gen_moves::<G>(board);
+        let mut board = board.clone();
+        let mut values = Vec::new();
+
+        for idx in 0..moves.len() {
+            let m = moves.get(idx);
+            if board.make(m, movegen) {
+                values.push(m.0);
+                board.unmake();
+            }
+        }
+
+        values.sort_unstable();
+        values
+    }
+
+    #[test]
+    fn between_contains_only_aligned_intermediate_squares() {
+        let movegen = MoveGenerator::new();
+
+        assert_eq!(
+            movegen.between[Square::A1][Square::A4],
+            Bitboard::from_square(Square::A2) | Bitboard::from_square(Square::A3)
+        );
+        assert_eq!(
+            movegen.between[Square::A1][Square::D4],
+            Bitboard::from_square(Square::B2) | Bitboard::from_square(Square::C3)
+        );
+        assert_eq!(
+            movegen.between[Square::D4][Square::A1],
+            Bitboard::from_square(Square::C3) | Bitboard::from_square(Square::B2)
+        );
+        assert!(movegen.between[Square::A1][Square::B2].is_empty());
+        assert!(movegen.between[Square::A1][Square::B3].is_empty());
+    }
+
+    #[test]
+    fn attackers_to_returns_all_attackers() {
+        let board = Board::from_fen("4r2k/1b6/5n2/5p2/4K3/8/8/8 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let attackers = movegen.attackers_to(&board, Square::E4, Color::Black);
+
+        assert_eq!(attackers.count_ones(), 4);
+        assert!(attackers.contains(Square::E8));
+        assert!(attackers.contains(Square::B7));
+        assert!(attackers.contains(Square::F6));
+        assert!(attackers.contains(Square::F5));
+    }
+
+    #[test]
+    fn double_check_evasions_generate_only_king_moves() {
+        let board = Board::from_fen("4r1k1/8/8/8/1b6/8/R7/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let moves = movegen.gen_moves::<Evasions>(&board);
+
+        assert!((0..moves.len()).all(|idx| moves.get(idx).from() == Square::E1));
+    }
+
+    #[test]
+    fn evasion_legal_moves_match_all_legal_moves() {
+        let movegen = MoveGenerator::new();
+        let positions = [
+            "4r1k1/8/8/8/8/8/3B4/4K3 w - - 0 1",
+            "4k3/8/8/8/8/5n2/6B1/4K3 w - - 0 1",
+            "4r1k1/8/8/8/1b6/8/R7/4K3 w - - 0 1",
+            "4k3/8/8/3pP3/8/8/8/4K2r w - d6 0 1",
+        ];
+
+        for fen in positions {
+            let board = Board::from_fen(fen).unwrap();
+            assert_eq!(
+                legal_move_values::<Evasions>(&board, &movegen),
+                legal_move_values::<All>(&board, &movegen),
+                "{fen}"
+            );
+        }
+    }
+
     #[test]
     fn all_moves_are_partitioned_into_noisy_and_quiet() {
-        let board =
-            Board::from_fen("1r2k3/P6r/8/3pP3/8/8/8/R3K2R w KQ d6 0 1").unwrap();
+        let board = Board::from_fen("1r2k3/P6r/8/3pP3/8/8/8/R3K2R w KQ d6 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let all = movegen.gen_moves::<All>(&board);
         let noisy = movegen.gen_moves::<Noisy>(&board);
@@ -608,8 +826,7 @@ mod tests {
 
     #[test]
     fn noisy_moves_include_only_captures_and_promotions() {
-        let board =
-            Board::from_fen("1r2k3/P6r/8/3pP3/8/8/8/R3K2R w KQ d6 0 1").unwrap();
+        let board = Board::from_fen("1r2k3/P6r/8/3pP3/8/8/8/R3K2R w KQ d6 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let moves = movegen.gen_moves::<Noisy>(&board);
 
@@ -630,8 +847,7 @@ mod tests {
 
     #[test]
     fn quiet_moves_exclude_captures_and_promotions() {
-        let board =
-            Board::from_fen("1r2k3/P6r/8/3pP3/8/8/8/R3K2R w KQ d6 0 1").unwrap();
+        let board = Board::from_fen("1r2k3/P6r/8/3pP3/8/8/8/R3K2R w KQ d6 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let moves = movegen.gen_moves::<Quiet>(&board);
 

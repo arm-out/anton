@@ -1,7 +1,7 @@
 use crate::{
     board::{Board, piece::PieceType, square::Square},
     evaluation::{Score, evaluate_static},
-    movegen::{All, MoveGenerator, Noisy},
+    movegen::{All, Evasions, MoveGenerator, Noisy},
 };
 
 use super::{
@@ -45,7 +45,12 @@ impl Search {
         let mut best_score = -INF;
         let original_alpha = alpha;
         let mut alpha = alpha;
-        let mut moves = refs.movegen.gen_moves::<All>(refs.board);
+        let in_check = Self::in_check(refs.board, refs.movegen);
+        let mut moves = if in_check {
+            refs.movegen.gen_moves::<Evasions>(refs.board)
+        } else {
+            refs.movegen.gen_moves::<All>(refs.board)
+        };
         moves.score_moves(refs.board, tt_move);
         let mut legal_moves = 0;
 
@@ -161,7 +166,11 @@ impl Search {
         let tt_move = tt_entry.map(|entry| entry.best_move());
         let mut best_move = None;
         let mut best_score = -INF;
-        let mut moves = refs.movegen.gen_moves::<All>(refs.board);
+        let mut moves = if in_check {
+            refs.movegen.gen_moves::<Evasions>(refs.board)
+        } else {
+            refs.movegen.gen_moves::<All>(refs.board)
+        };
         moves.score_moves(refs.board, tt_move);
         let mut legal_moves = 0;
 
@@ -265,7 +274,7 @@ impl Search {
         }
 
         let mut moves = if in_check {
-            refs.movegen.gen_moves::<All>(refs.board)
+            refs.movegen.gen_moves::<Evasions>(refs.board)
         } else {
             refs.movegen.gen_moves::<Noisy>(refs.board)
         };
