@@ -204,6 +204,10 @@ impl Search {
         result
     }
 
+    pub fn clear(&mut self) {
+        self.tt.clear();
+    }
+
     pub fn search_depth(&mut self, board: &mut Board, depth: u8) -> SearchResult {
         let mut info = SearchInfo::new(SearchLimit::Depth(depth));
         Self::search_depth_inner(

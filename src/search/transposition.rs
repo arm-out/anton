@@ -88,6 +88,10 @@ impl TranspositionTable {
         }
     }
 
+    pub(super) fn clear(&mut self) {
+        self.entries.fill(TTEntry::default());
+    }
+
     pub(super) fn store(
         &mut self,
         key: u64,
@@ -167,5 +171,16 @@ mod tests {
         let entry = table.probe(1).unwrap();
         assert_eq!(entry.best_move(), deep_move);
         assert_eq!(entry.score(), 100);
+    }
+
+    #[test]
+    fn clear_invalidates_entries() {
+        let mut table = TranspositionTable::new(0);
+        let best_move = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+        table.store(1, best_move, 123, 4, Bound::Exact);
+
+        table.clear();
+
+        assert!(table.probe(1).is_none());
     }
 }
