@@ -150,8 +150,10 @@ impl Search {
 
         let static_eval = evaluate_static(refs.board, refs.movegen);
         let in_check = Self::in_check(refs.board, refs.movegen);
+        let is_pv = alpha.saturating_add(1) < beta;
 
         if depth <= REVERSE_FUTILITY_MAX_DEPTH
+            && !is_pv
             && !in_check
             && !is_mate_score(beta)
             && static_eval.saturating_sub(REVERSE_FUTILITY_MARGIN * depth as Score) >= beta
