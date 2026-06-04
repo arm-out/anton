@@ -5,10 +5,6 @@
 - Parse `ucinewgame` command
 - Staged movegen
 
-### Fixes
-
-- Skip RFP in PV node
-
 ## v0.6.0
 
 ### Regression
