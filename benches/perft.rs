@@ -1,6 +1,12 @@
 use anton::{board::Board, movegen::MoveGenerator};
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
+#[allow(dead_code)]
+#[path = "../tests/perft.rs"]
+mod perft;
+
+use perft::perft;
+
 struct PerftPosition {
     name: &'static str,
     fen: &'static str,
@@ -10,56 +16,30 @@ struct PerftPosition {
 
 const POSITIONS: &[PerftPosition] = &[
     PerftPosition {
-        name: "startpos_d7",
+        name: "startpos_d5",
         fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        depth: 7,
-        nodes: 3_195_901_860,
+        depth: 5,
+        nodes: 4_865_609,
     },
     PerftPosition {
-        name: "kiwipete_d6",
+        name: "kiwipete_d4",
         fen: "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
-        depth: 6,
-        nodes: 8_031_647_685,
+        depth: 4,
+        nodes: 4_085_603,
     },
     PerftPosition {
-        name: "position3_d7",
-        fen: "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1 ",
-        depth: 7,
-        nodes: 178_633_661,
+        name: "position3_d5",
+        fen: "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+        depth: 5,
+        nodes: 674_624,
     },
     PerftPosition {
-        name: "position4_d7",
+        name: "position4_d4",
         fen: "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
-        depth: 7,
-        nodes: 706_045_033,
-    },
-    PerftPosition {
-        name: "steven_d6",
-        fen: "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
-        depth: 6,
-        nodes: 6_923_051_137,
+        depth: 4,
+        nodes: 422_333,
     },
 ];
-
-fn perft(board: &mut Board, depth: u8, movegen: &MoveGenerator) -> u64 {
-    if depth == 0 {
-        return 1;
-    }
-
-    let moves = movegen.gen_moves(board);
-    let mut nodes = 0;
-
-    for i in 0..moves.len() {
-        let m = moves.get(i);
-
-        if board.make(m, movegen) {
-            nodes += perft(board, depth - 1, movegen);
-            board.unmake();
-        }
-    }
-
-    nodes
-}
 
 fn bench_perft(c: &mut Criterion) {
     let movegen = MoveGenerator::new();
