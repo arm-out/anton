@@ -2,6 +2,14 @@
 
 ### Regression
 
+```
+Elo   | 95.76 +- 34.59 (95%)
+SPRT  | 20.0+0.20s Threads=1 Hash=256MB
+LLR   | 2.97 (-2.94, 2.94) [0.00, 10.00]
+Games | N: 398 W: 226 L: 119 D: 53
+Penta | [19, 15, 72, 26, 67]
+```
+
 ### Performance
 
 - Tuned material and piece square tables
