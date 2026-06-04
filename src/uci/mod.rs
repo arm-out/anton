@@ -65,6 +65,11 @@ fn spawn_command_thread(
                         break;
                     }
                 }
+                command::UCICommand::UciNewGame => {
+                    if engine_command_tx.send(EngineCommand::NewGame).is_err() {
+                        break;
+                    }
+                }
                 // TODO: actually support options
                 command::UCICommand::SetOption(_) => {}
                 command::UCICommand::Position(position) => {

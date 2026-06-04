@@ -3,6 +3,7 @@ use crate::board::Board;
 #[derive(Debug, PartialEq)]
 pub enum UCICommand {
     Uci,
+    UciNewGame,
     IsReady,
     SetOption(SetOptionCommand),
     Go(GoCommand),
@@ -59,6 +60,7 @@ pub fn parse_command(line: &str) -> Result<UCICommand, UCIParseError> {
 
     let parsed = match command {
         "uci" => UCICommand::Uci,
+        "ucinewgame" => UCICommand::UciNewGame,
         "isready" => UCICommand::IsReady,
         "setoption" => UCICommand::SetOption(parse_setoption_command(parts)?),
         "go" => UCICommand::Go(parse_go_command(parts)?),
@@ -194,6 +196,11 @@ fn parse_go_value<T: std::str::FromStr>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_uci_new_game() {
+        assert_eq!(parse_command("ucinewgame"), Ok(UCICommand::UciNewGame));
+    }
 
     #[test]
     fn parses_position_startpos() {
