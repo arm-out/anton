@@ -3,7 +3,10 @@ use crate::board::piece::{Color, PieceType};
 use super::{
     EvalValue, MAX_GAME_PHASE,
     params::{
-        material_eg_weight_idx, material_mg_weight_idx, psqt_eg_weight_idx, psqt_mg_weight_idx,
+        backward_pawn_eg_weight_idx, backward_pawn_mg_weight_idx, doubled_pawn_eg_weight_idx,
+        doubled_pawn_mg_weight_idx, connected_pawn_eg_weight_idx, connected_pawn_mg_weight_idx,
+        isolated_pawn_eg_weight_idx, isolated_pawn_mg_weight_idx, material_eg_weight_idx,
+        material_mg_weight_idx, psqt_eg_weight_idx, psqt_mg_weight_idx,
     },
     weights,
 };
@@ -14,6 +17,10 @@ pub const FEATURE_COUNT: usize = weights::WEIGHT_COUNT;
 pub enum EvalTerm {
     Material(PieceType),
     Psqt(PieceType, usize),
+    IsolatedPawn(usize),
+    DoubledPawn(usize),
+    BackwardPawn(usize),
+    ConnectedPawn(usize),
 }
 
 impl EvalTerm {
@@ -21,6 +28,10 @@ impl EvalTerm {
         match self {
             Self::Material(ptype) => material_mg_weight_idx(ptype as usize),
             Self::Psqt(ptype, psqt_idx) => psqt_mg_weight_idx(ptype as usize, psqt_idx),
+            Self::IsolatedPawn(file) => isolated_pawn_mg_weight_idx(file),
+            Self::DoubledPawn(file) => doubled_pawn_mg_weight_idx(file),
+            Self::BackwardPawn(file) => backward_pawn_mg_weight_idx(file),
+            Self::ConnectedPawn(file) => connected_pawn_mg_weight_idx(file),
         }
     }
 
@@ -28,6 +39,10 @@ impl EvalTerm {
         match self {
             Self::Material(ptype) => material_eg_weight_idx(ptype as usize),
             Self::Psqt(ptype, psqt_idx) => psqt_eg_weight_idx(ptype as usize, psqt_idx),
+            Self::IsolatedPawn(file) => isolated_pawn_eg_weight_idx(file),
+            Self::DoubledPawn(file) => doubled_pawn_eg_weight_idx(file),
+            Self::BackwardPawn(file) => backward_pawn_eg_weight_idx(file),
+            Self::ConnectedPawn(file) => connected_pawn_eg_weight_idx(file),
         }
     }
 }
@@ -74,6 +89,22 @@ impl FeatureVectorTrace {
         self.features[EvalTerm::Psqt(ptype, psqt_idx).mg_feature_idx()]
     }
 
+    pub fn isolated_pawn_feature(&self, file: usize) -> EvalValue {
+        self.features[EvalTerm::IsolatedPawn(file).mg_feature_idx()]
+    }
+
+    pub fn doubled_pawn_feature(&self, file: usize) -> EvalValue {
+        self.features[EvalTerm::DoubledPawn(file).mg_feature_idx()]
+    }
+
+    pub fn backward_pawn_feature(&self, file: usize) -> EvalValue {
+        self.features[EvalTerm::BackwardPawn(file).mg_feature_idx()]
+    }
+
+    pub fn connected_pawn_feature(&self, square: usize) -> EvalValue {
+        self.features[EvalTerm::ConnectedPawn(square).mg_feature_idx()]
+    }
+
     pub fn tapered_features(&self, game_phase: u8) -> Vec<f64> {
         let phase = game_phase.min(MAX_GAME_PHASE) as f64;
         let max_phase = MAX_GAME_PHASE as f64;
@@ -114,4 +145,8 @@ fn trace_sign(side: Color) -> EvalValue {
 fn is_mg_feature_idx(idx: usize) -> bool {
     idx < material_eg_weight_idx(0)
         || (psqt_mg_weight_idx(0, 0)..psqt_eg_weight_idx(0, 0)).contains(&idx)
+        || (isolated_pawn_mg_weight_idx(0)..isolated_pawn_eg_weight_idx(0)).contains(&idx)
+        || (doubled_pawn_mg_weight_idx(0)..doubled_pawn_eg_weight_idx(0)).contains(&idx)
+        || (backward_pawn_mg_weight_idx(0)..backward_pawn_eg_weight_idx(0)).contains(&idx)
+        || (connected_pawn_mg_weight_idx(0)..connected_pawn_eg_weight_idx(0)).contains(&idx)
 }

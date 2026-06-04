@@ -72,6 +72,10 @@ pub struct EvalParams {
     pub material: [EvalScore; PieceType::COUNT],
     pub psqt: [[EvalScore; Square::COUNT]; PieceType::COUNT],
     pub piece_square: [[EvalScore; Square::COUNT]; PieceType::COUNT],
+    pub isolated_pawn: [EvalScore; 8],
+    pub doubled_pawn: [EvalScore; 8],
+    pub backward_pawn: [EvalScore; 8],
+    pub connected_pawn: [EvalScore; Square::COUNT],
 }
 
 impl EvalParams {
@@ -84,6 +88,10 @@ impl EvalParams {
             material: [EvalScore::zero(); PieceType::COUNT],
             psqt: [[EvalScore::zero(); Square::COUNT]; PieceType::COUNT],
             piece_square: [[EvalScore::zero(); Square::COUNT]; PieceType::COUNT],
+            isolated_pawn: [EvalScore::zero(); 8],
+            doubled_pawn: [EvalScore::zero(); 8],
+            backward_pawn: [EvalScore::zero(); 8],
+            connected_pawn: [EvalScore::zero(); Square::COUNT],
         };
         let mut ptype = 0;
 
@@ -109,6 +117,32 @@ impl EvalParams {
             ptype += 1;
         }
 
+        let mut file = 0;
+        while file < 8 {
+            params.isolated_pawn[file] = EvalScore::new(
+                weights[isolated_pawn_mg_weight_idx(file)],
+                weights[isolated_pawn_eg_weight_idx(file)],
+            );
+            params.doubled_pawn[file] = EvalScore::new(
+                weights[doubled_pawn_mg_weight_idx(file)],
+                weights[doubled_pawn_eg_weight_idx(file)],
+            );
+            params.backward_pawn[file] = EvalScore::new(
+                weights[backward_pawn_mg_weight_idx(file)],
+                weights[backward_pawn_eg_weight_idx(file)],
+            );
+            file += 1;
+        }
+
+        let mut square = 0;
+        while square < Square::COUNT {
+            params.connected_pawn[square] = EvalScore::new(
+                weights[connected_pawn_mg_weight_idx(square)],
+                weights[connected_pawn_eg_weight_idx(square)],
+            );
+            square += 1;
+        }
+
         params
     }
 
@@ -128,6 +162,24 @@ impl EvalParams {
             }
 
             ptype += 1;
+        }
+
+        let mut file = 0;
+        while file < 8 {
+            weights[isolated_pawn_mg_weight_idx(file)] = self.isolated_pawn[file].mg;
+            weights[isolated_pawn_eg_weight_idx(file)] = self.isolated_pawn[file].eg;
+            weights[doubled_pawn_mg_weight_idx(file)] = self.doubled_pawn[file].mg;
+            weights[doubled_pawn_eg_weight_idx(file)] = self.doubled_pawn[file].eg;
+            weights[backward_pawn_mg_weight_idx(file)] = self.backward_pawn[file].mg;
+            weights[backward_pawn_eg_weight_idx(file)] = self.backward_pawn[file].eg;
+            file += 1;
+        }
+
+        let mut square = 0;
+        while square < Square::COUNT {
+            weights[connected_pawn_mg_weight_idx(square)] = self.connected_pawn[square].mg;
+            weights[connected_pawn_eg_weight_idx(square)] = self.connected_pawn[square].eg;
+            square += 1;
         }
 
         weights
@@ -162,4 +214,36 @@ pub const fn psqt_mg_weight_idx(ptype: usize, square: usize) -> usize {
 
 pub const fn psqt_eg_weight_idx(ptype: usize, square: usize) -> usize {
     2 * PieceType::COUNT + PieceType::COUNT * Square::COUNT + ptype * Square::COUNT + square
+}
+
+pub const fn isolated_pawn_mg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + file
+}
+
+pub const fn isolated_pawn_eg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 8 + file
+}
+
+pub const fn doubled_pawn_mg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 16 + file
+}
+
+pub const fn doubled_pawn_eg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 24 + file
+}
+
+pub const fn backward_pawn_mg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 32 + file
+}
+
+pub const fn backward_pawn_eg_weight_idx(file: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 40 + file
+}
+
+pub const fn connected_pawn_mg_weight_idx(square: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 48 + square
+}
+
+pub const fn connected_pawn_eg_weight_idx(square: usize) -> usize {
+    2 * PieceType::COUNT + 2 * PieceType::COUNT * Square::COUNT + 48 + Square::COUNT + square
 }

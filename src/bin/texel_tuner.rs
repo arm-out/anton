@@ -13,6 +13,7 @@ use std::{
 use anton::{
     board::Board,
     evaluation::{EVAL_PARAMS, EvalValue, FeatureVectorTrace, evaluate, trace::FEATURE_COUNT},
+    movegen::MoveGenerator,
 };
 
 const CACHE_MAGIC: &[u8; 8] = b"ANTTUNE1";
@@ -38,20 +39,94 @@ struct WeightCategory {
 }
 
 const WEIGHT_LAYOUT: &[WeightCategory] = &[
-    WeightCategory { name: "material mg", shape: (1, 6) },
-    WeightCategory { name: "material eg", shape: (1, 6) },
-    WeightCategory { name: "pawn psqt mg", shape: (8, 8) },
-    WeightCategory { name: "knight psqt mg", shape: (8, 8) },
-    WeightCategory { name: "bishop psqt mg", shape: (8, 8) },
-    WeightCategory { name: "rook psqt mg", shape: (8, 8) },
-    WeightCategory { name: "queen psqt mg", shape: (8, 8) },
-    WeightCategory { name: "king psqt mg", shape: (8, 8) },
-    WeightCategory { name: "pawn psqt eg", shape: (8, 8) },
-    WeightCategory { name: "knight psqt eg", shape: (8, 8) },
-    WeightCategory { name: "bishop psqt eg", shape: (8, 8) },
-    WeightCategory { name: "rook psqt eg", shape: (8, 8) },
-    WeightCategory { name: "queen psqt eg", shape: (8, 8) },
-    WeightCategory { name: "king psqt eg", shape: (8, 8) },
+    WeightCategory {
+        name: "material mg",
+        shape: (1, 6),
+    },
+    WeightCategory {
+        name: "material eg",
+        shape: (1, 6),
+    },
+    WeightCategory {
+        name: "pawn psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "knight psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "bishop psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "rook psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "queen psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "king psqt mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "pawn psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "knight psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "bishop psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "rook psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "queen psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "king psqt eg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "isolated pawn mg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "isolated pawn eg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "doubled pawn mg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "doubled pawn eg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "backward pawn mg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "backward pawn eg",
+        shape: (1, 8),
+    },
+    WeightCategory {
+        name: "connected pawn mg",
+        shape: (8, 8),
+    },
+    WeightCategory {
+        name: "connected pawn eg",
+        shape: (8, 8),
+    },
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -143,6 +218,7 @@ enum Command {
         learning_rates: Vec<f64>,
         epochs: usize,
         eps: f64,
+        train: TrainMask,
     },
     Tune {
         common: CommonOptions,
@@ -152,6 +228,7 @@ enum Command {
         patience: usize,
         min_delta: f64,
         eps: f64,
+        train: TrainMask,
     },
 }
 
@@ -168,6 +245,85 @@ struct TuneResult {
     best_train_mse: f64,
     best_validation_mse: f64,
     epochs_run: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TrainMask {
+    train: Vec<bool>,
+}
+
+impl TrainMask {
+    fn none() -> Self {
+        Self {
+            train: vec![false; FEATURE_COUNT],
+        }
+    }
+
+    fn parse(spec: Option<String>) -> Result<Self, String> {
+        let Some(spec) = spec else {
+            return Ok(Self::none());
+        };
+        let mut mask = Self::none();
+        for raw_part in spec.split(',') {
+            let part = raw_part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            mask.train_part(part)?;
+        }
+        Ok(mask)
+    }
+
+    fn train_part(&mut self, part: &str) -> Result<(), String> {
+        if part == "all" {
+            self.train.fill(true);
+            return Ok(());
+        }
+
+        if let Some((start, end)) = part.split_once("..") {
+            let start = parse_weight_idx(start.trim())?;
+            let end = parse_weight_idx(end.trim())?;
+            if start > end {
+                return Err(format!("invalid --train-weights range {part}"));
+            }
+            for idx in start..=end {
+                self.train_idx(idx)?;
+            }
+            return Ok(());
+        }
+
+        if let Ok(idx) = part.parse::<usize>() {
+            return self.train_idx(idx);
+        }
+
+        let Some((offset, category)) = weight_category_by_name(part) else {
+            return Err(format!("unknown --train-weights entry {part:?}"));
+        };
+        let len = category.shape.0 * category.shape.1;
+        for idx in offset..offset + len {
+            self.train[idx] = true;
+        }
+        Ok(())
+    }
+
+    fn train_idx(&mut self, idx: usize) -> Result<(), String> {
+        if idx >= self.train.len() {
+            return Err(format!(
+                "--train-weights index {idx} out of range 0..{}",
+                self.train.len() - 1
+            ));
+        }
+        self.train[idx] = true;
+        Ok(())
+    }
+
+    fn should_train(&self, idx: usize) -> bool {
+        self.train[idx]
+    }
+
+    fn count(&self) -> usize {
+        self.train.iter().filter(|&&train| train).count()
+    }
 }
 
 fn main() {
@@ -218,10 +374,14 @@ fn run() -> Result<(), String> {
             learning_rates,
             epochs,
             eps,
+            train,
         } => {
             ensure_cache(&common)?;
             let mut rows = Vec::new();
             let mut report = String::new();
+            let line = format!("trainable_weights {}\n", train.count());
+            print!("{line}");
+            report.push_str(&line);
             for lr in learning_rates {
                 let mut weights = initial_weights();
                 let mut acc = vec![0.0; FEATURE_COUNT];
@@ -240,6 +400,7 @@ fn run() -> Result<(), String> {
                         lr,
                         eps,
                         common.batch_size,
+                        &train,
                     )?;
                     let mse = compute_mse(&common.cache, &weights, k, common.batch_size)?;
                     if mse.validation < best.validation {
@@ -277,6 +438,7 @@ fn run() -> Result<(), String> {
             patience,
             min_delta,
             eps,
+            train,
         } => {
             let header = ensure_cache(&common)?;
             let result = tune(
@@ -288,6 +450,7 @@ fn run() -> Result<(), String> {
                 min_delta,
                 eps,
                 common.batch_size,
+                &train,
             )?;
             write_weights(
                 &common.output,
@@ -298,6 +461,7 @@ fn run() -> Result<(), String> {
                 max_epochs,
                 patience,
                 min_delta,
+                train.count(),
             )?;
             println!(
                 "wrote {} best_epoch {} train_mse {:.12} validation_mse {:.12}",
@@ -381,6 +545,7 @@ fn parse_args(args: Vec<String>) -> Result<Command, String> {
             let eps = parser
                 .f64_opt("--adagrad-eps")?
                 .unwrap_or(DEFAULT_ADAGRAD_EPS);
+            let train = TrainMask::parse(parser.take("--train-weights"))?;
             parser.finish()?;
             Ok(Command::ScanLr {
                 common,
@@ -388,6 +553,7 @@ fn parse_args(args: Vec<String>) -> Result<Command, String> {
                 learning_rates,
                 epochs,
                 eps,
+                train,
             })
         }
         "tune" => {
@@ -406,6 +572,7 @@ fn parse_args(args: Vec<String>) -> Result<Command, String> {
             let eps = parser
                 .f64_opt("--adagrad-eps")?
                 .unwrap_or(DEFAULT_ADAGRAD_EPS);
+            let train = TrainMask::parse(parser.take("--train-weights"))?;
             parser.finish()?;
             Ok(Command::Tune {
                 common,
@@ -415,6 +582,7 @@ fn parse_args(args: Vec<String>) -> Result<Command, String> {
                 patience,
                 min_delta,
                 eps,
+                train,
             })
         }
         _ => Err(usage()),
@@ -453,7 +621,9 @@ fn common_options(
 }
 
 fn usage() -> String {
-    "usage: texel_tuner <find-k|scan-lr|tune> --dataset <path> [options]".to_string()
+    "usage: texel_tuner <find-k|scan-lr|tune> --dataset <path> [options]\n\
+     choose tuned weights with: --train-weights \"all\" or --train-weights \"0,10..20,pawn psqt mg\""
+        .to_string()
 }
 
 struct ArgParser {
@@ -595,6 +765,7 @@ fn build_cache(common: &CommonOptions, mut header: CacheHeader) -> Result<CacheH
 
     let mut progress = CacheProgress::new(header.dataset_len);
     let mut skips = SkipStats::default();
+    let movegen = MoveGenerator::new();
     let mut reader = BufReader::new(dataset);
     let mut line = String::new();
     let mut line_idx = 0_u64;
@@ -616,7 +787,7 @@ fn build_cache(common: &CommonOptions, mut header: CacheHeader) -> Result<CacheH
                 continue;
             }
         };
-        let sample = match sample_from_row(&row, common.validation_percent, common.seed) {
+        let sample = match sample_from_row(&row, common.validation_percent, common.seed, &movegen) {
             Ok(sample) => sample,
             Err(err) => {
                 header.stats.skipped += 1;
@@ -663,8 +834,8 @@ fn build_cache(common: &CommonOptions, mut header: CacheHeader) -> Result<CacheH
 
 fn parse_dataset_line(line: &str) -> Result<DatasetRow, String> {
     let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.len() < 8 {
-        return Err("expected 8 fields".to_string());
+    if parts.len() < 7 {
+        return Err("expected at least 7 fields".to_string());
     }
     let fen = parts[0..6].join(" ");
     let result_token = parts[6]
@@ -677,7 +848,10 @@ fn parse_dataset_line(line: &str) -> Result<DatasetRow, String> {
         "1" | "1.0" => 1.0,
         _ => return Err("invalid result".to_string()),
     };
-    let source_eval = parts[7].parse().map_err(|_| "invalid eval".to_string())?;
+    let source_eval = match parts.get(7) {
+        Some(value) => value.parse().map_err(|_| "invalid eval".to_string())?,
+        None => 0,
+    };
     Ok(DatasetRow {
         fen,
         result,
@@ -739,10 +913,15 @@ impl CacheProgress {
     }
 }
 
-fn sample_from_row(row: &DatasetRow, validation_percent: u8, seed: u64) -> Result<Sample, String> {
+fn sample_from_row(
+    row: &DatasetRow,
+    validation_percent: u8,
+    seed: u64,
+    movegen: &MoveGenerator,
+) -> Result<Sample, String> {
     let board = Board::from_fen(&row.fen).map_err(|err| format!("invalid fen: {err}"))?;
     let mut trace = FeatureVectorTrace::new();
-    evaluate(&board, &mut trace);
+    evaluate(&board, movegen, &mut trace);
     let features = trace
         .tapered_features(board.state.game_phase)
         .into_iter()
@@ -1028,10 +1207,11 @@ fn train_one_epoch(
     learning_rate: f64,
     eps: f64,
     batch_size: usize,
+    train: &TrainMask,
 ) -> Result<(), String> {
     for_each_batch(cache, batch_size, |batch| {
         for sample in batch.iter().filter(|sample| sample.split == Split::Train) {
-            adagrad_update(sample, weights, acc, k, learning_rate, eps);
+            adagrad_update(sample, weights, acc, k, learning_rate, eps, train);
         }
         Ok(())
     })
@@ -1044,12 +1224,16 @@ fn adagrad_update(
     k: f64,
     learning_rate: f64,
     eps: f64,
+    train: &TrainMask,
 ) {
     let p = predict(sample, weights, k);
     let error = sample.result as f64 - p;
     let common = -2.0 * error * k * p * (1.0 - p);
     for &(idx, value) in &sample.features {
         let idx = idx as usize;
+        if !train.should_train(idx) {
+            continue;
+        }
         let grad = common * value as f64;
         acc[idx] += grad * grad;
         weights[idx] -= learning_rate * grad / (acc[idx].sqrt() + eps);
@@ -1065,6 +1249,7 @@ fn tune(
     min_delta: f64,
     eps: f64,
     batch_size: usize,
+    train: &TrainMask,
 ) -> Result<TuneResult, String> {
     let mut weights = initial_weights();
     let mut acc = vec![0.0; FEATURE_COUNT];
@@ -1084,6 +1269,7 @@ fn tune(
             learning_rate,
             eps,
             batch_size,
+            train,
         )?;
         let mse = compute_mse(cache, &weights, k, batch_size)?;
         epochs_run = epoch;
@@ -1127,11 +1313,12 @@ fn write_weights(
     max_epochs: usize,
     patience: usize,
     min_delta: f64,
+    trainable_weight_count: usize,
 ) -> Result<(), String> {
     let mut output = String::new();
     output.push_str("use super::EvalValue;\n\n");
     output.push_str(&format!(
-        "// Generated by texel_tuner\n// k: {:.12}\n// learning_rate: {:.6}\n// best_epoch: {}\n// epochs_run: {}\n// max_epochs: {}\n// patience: {}\n// min_delta: {:.12}\n// train_mse: {:.12}\n// validation_mse: {:.12}\n// valid: {}\n// skipped: {}\n// train_samples: {}\n// validation_samples: {}\n// validation_percent: {}\n// seed: {}\n\n",
+        "// Generated by texel_tuner\n// k: {:.12}\n// learning_rate: {:.6}\n// best_epoch: {}\n// epochs_run: {}\n// max_epochs: {}\n// patience: {}\n// min_delta: {:.12}\n// trainable_weights: {}\n// train_mse: {:.12}\n// validation_mse: {:.12}\n// valid: {}\n// skipped: {}\n// train_samples: {}\n// validation_samples: {}\n// validation_percent: {}\n// seed: {}\n\n",
         k,
         learning_rate,
         result.best_epoch,
@@ -1139,6 +1326,7 @@ fn write_weights(
         max_epochs,
         patience,
         min_delta,
+        trainable_weight_count,
         result.best_train_mse,
         result.best_validation_mse,
         header.stats.valid,
@@ -1179,6 +1367,24 @@ fn push_weight_layout(output: &mut String, weights: &[f64]) -> Result<(), String
     }
 
     Ok(())
+}
+
+fn weight_category_by_name(name: &str) -> Option<(usize, &'static WeightCategory)> {
+    let mut offset = 0;
+    for category in WEIGHT_LAYOUT {
+        let len = category.shape.0 * category.shape.1;
+        if category.name == name {
+            return Some((offset, category));
+        }
+        offset += len;
+    }
+    None
+}
+
+fn parse_weight_idx(value: &str) -> Result<usize, String> {
+    value
+        .parse()
+        .map_err(|_| format!("invalid --train-weights index {value:?}"))
 }
 
 fn push_weight_block(output: &mut String, category: &WeightCategory, weights: &[f64]) {
@@ -1291,10 +1497,8 @@ mod tests {
 
     #[test]
     fn parses_decimal_win_loss_results() {
-        let win =
-            parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 [1.0] 42").unwrap();
-        let loss =
-            parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 [0.0] -42").unwrap();
+        let win = parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 [1.0] 42").unwrap();
+        let loss = parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 [0.0] -42").unwrap();
         assert_eq!(win.result, 1.0);
         assert_eq!(loss.result, 0.0);
     }
@@ -1305,8 +1509,10 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_eval() {
-        assert!(parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 1").is_err());
+    fn defaults_missing_eval_to_zero() {
+        let row = parse_dataset_line("8/8/8/8/8/8/8/8 w - - 0 1 1").unwrap();
+        assert_eq!(row.result, 1.0);
+        assert_eq!(row.source_eval, 0);
     }
 
     #[test]
@@ -1356,8 +1562,73 @@ mod tests {
         };
         let mut weights = vec![0.0];
         let mut acc = vec![0.0];
-        adagrad_update(&sample, &mut weights, &mut acc, 0.1, 1.0, 1e-8);
+        adagrad_update(
+            &sample,
+            &mut weights,
+            &mut acc,
+            0.1,
+            1.0,
+            1e-8,
+            &TrainMask::parse(Some("all".to_string())).unwrap(),
+        );
         assert!(weights[0] > 0.0);
+    }
+
+    #[test]
+    fn adagrad_only_updates_trainable_weights() {
+        let sample = Sample {
+            split: Split::Train,
+            result: 1.0,
+            source_eval: 0,
+            features: vec![(0, 1.0), (1, 1.0)],
+        };
+        let train = TrainMask::parse(Some("1".to_string())).unwrap();
+        let mut weights = vec![0.0, 0.0];
+        let mut acc = vec![0.0, 0.0];
+
+        adagrad_update(&sample, &mut weights, &mut acc, 0.1, 1.0, 1e-8, &train);
+
+        assert_eq!(weights[0], 0.0);
+        assert_eq!(acc[0], 0.0);
+        assert!(weights[1] > 0.0);
+        assert!(acc[1] > 0.0);
+    }
+
+    #[test]
+    fn train_mask_defaults_to_no_trainable_weights() {
+        let sample = Sample {
+            split: Split::Train,
+            result: 1.0,
+            source_eval: 0,
+            features: vec![(0, 1.0)],
+        };
+        let train = TrainMask::parse(None).unwrap();
+        let mut weights = vec![0.0];
+        let mut acc = vec![0.0];
+
+        adagrad_update(&sample, &mut weights, &mut acc, 0.1, 1.0, 1e-8, &train);
+
+        assert_eq!(train.count(), 0);
+        assert_eq!(weights[0], 0.0);
+        assert_eq!(acc[0], 0.0);
+    }
+
+    #[test]
+    fn train_mask_parses_indexes_ranges_categories_and_all() {
+        let mask = TrainMask::parse(Some("0,2..4,material eg".to_string())).unwrap();
+
+        assert!(mask.should_train(0));
+        assert!(!mask.should_train(1));
+        assert!(mask.should_train(2));
+        assert!(mask.should_train(3));
+        assert!(mask.should_train(4));
+        for idx in 6..12 {
+            assert!(mask.should_train(idx));
+        }
+        assert_eq!(mask.count(), 10);
+
+        let all = TrainMask::parse(Some("all".to_string())).unwrap();
+        assert_eq!(all.count(), FEATURE_COUNT);
     }
 
     #[test]
@@ -1421,8 +1692,9 @@ mod tests {
         let mut acc_a = vec![0.0];
         let mut weights_b = vec![0.0];
         let mut acc_b = vec![0.0];
-        adagrad_update(&sample, &mut weights_a, &mut acc_a, 0.1, 1.0, 1e-8);
-        adagrad_update(&sample, &mut weights_b, &mut acc_b, 0.1, 1.0, 1e-8);
+        let train = TrainMask::parse(Some("all".to_string())).unwrap();
+        adagrad_update(&sample, &mut weights_a, &mut acc_a, 0.1, 1.0, 1e-8, &train);
+        adagrad_update(&sample, &mut weights_b, &mut acc_b, 0.1, 1.0, 1e-8, &train);
         assert_eq!(weights_a, weights_b);
         assert_eq!(acc_a, acc_b);
     }
@@ -1471,7 +1743,18 @@ mod tests {
             writer.flush().unwrap();
         }
 
-        let result = tune(&path, 0.1, 1.0, 10, 2, 0.0, 1e-8, 1).unwrap();
+        let result = tune(
+            &path,
+            0.1,
+            1.0,
+            10,
+            2,
+            0.0,
+            1e-8,
+            1,
+            &TrainMask::parse(Some("all".to_string())).unwrap(),
+        )
+        .unwrap();
 
         assert_eq!(result.best_epoch, 1);
         assert_eq!(result.epochs_run, 3);

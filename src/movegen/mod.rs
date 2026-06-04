@@ -312,6 +312,10 @@ impl MoveGenerator {
         }
     }
 
+    pub fn get_pawn_attack_mask(&self, square: Square, color: Color) -> Bitboard {
+        self.pawn_attacks[color][square]
+    }
+
     // ----------------------- INIT HELPERS -----------------------
 
     fn init_pawn_attacks(&mut self, square: Square, color: Color) {

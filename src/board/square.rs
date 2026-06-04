@@ -1,5 +1,7 @@
 use std::ops::{Add, Index, IndexMut, Sub};
 
+use crate::board::bitboard::Bitboard;
+
 use super::piece::Color;
 
 #[rustfmt::skip]
@@ -174,6 +176,19 @@ impl File {
     pub fn from_char(c: char) -> Self {
         let c_lower: char = c.to_ascii_lowercase();
         unsafe { std::mem::transmute(c_lower as u8 - b'a') }
+    }
+
+    pub fn adjacent_file_mask(self) -> Bitboard {
+        match self {
+            File::A => Bitboard::from_file(File::B),
+            File::B => Bitboard::from_file(File::A).union(Bitboard::from_file(File::C)),
+            File::C => Bitboard::from_file(File::B).union(Bitboard::from_file(File::D)),
+            File::D => Bitboard::from_file(File::C).union(Bitboard::from_file(File::E)),
+            File::E => Bitboard::from_file(File::D).union(Bitboard::from_file(File::F)),
+            File::F => Bitboard::from_file(File::E).union(Bitboard::from_file(File::G)),
+            File::G => Bitboard::from_file(File::F).union(Bitboard::from_file(File::H)),
+            File::H => Bitboard::from_file(File::G),
+        }
     }
 }
 
