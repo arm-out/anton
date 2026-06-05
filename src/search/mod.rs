@@ -1,4 +1,5 @@
 mod alphabeta;
+mod movepicker;
 mod time;
 mod transposition;
 

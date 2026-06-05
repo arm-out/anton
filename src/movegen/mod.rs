@@ -9,7 +9,6 @@ use crate::{
     movegen::{
         directions::{KING_SHIFTS, KNIGHT_SHIFTS, MoveShift, PAWN_SHIFT_BLACK, PAWN_SHIFT_WHITE},
         magic::{BISHOP_MAGICS, BISHOP_TABLE_SIZE, Magic, ROOK_MAGICS, ROOK_TABLE_SIZE},
-        movelist::MoveList,
         moves::{Move, MoveType, PROMO_CAPTURES, PROMO_TYPES},
     },
 };
@@ -18,6 +17,8 @@ mod directions;
 mod magic;
 mod movelist;
 pub mod moves;
+
+pub(crate) use movelist::MoveList;
 
 #[derive(Debug)]
 pub struct MoveGenerator {
