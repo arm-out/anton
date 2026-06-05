@@ -1,11 +1,12 @@
 use crate::{
     board::{Board, piece::PieceType, square::Square},
     evaluation::{Score, evaluate_static},
-    movegen::{All, Evasions, MoveGenerator, Noisy},
+    movegen::MoveGenerator,
 };
 
 use super::{
     Search, SearchInfo, SearchRefs, SearchResult, is_mate_score,
+    movepicker::MovePicker,
     transposition::{Bound, TTEntry},
 };
 
@@ -46,20 +47,17 @@ impl Search {
         let original_alpha = alpha;
         let mut alpha = alpha;
         let in_check = Self::in_check(refs.board, refs.movegen);
-        let mut moves = if in_check {
-            refs.movegen.gen_moves::<Evasions>(refs.board)
+        let mut move_picker = if in_check {
+            MovePicker::evasions(tt_move)
         } else {
-            refs.movegen.gen_moves::<All>(refs.board)
+            MovePicker::new(tt_move, true)
         };
-        moves.score_moves(refs.board, tt_move);
         let mut legal_moves = 0;
 
-        for i in 0..moves.len() {
+        while let Some(m) = move_picker.next_move(refs.board, refs.movegen) {
             if best_move.is_some() && info.should_stop() {
                 break;
             }
-
-            let m = moves.pick_next(i);
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
@@ -168,20 +166,17 @@ impl Search {
         let tt_move = tt_entry.map(|entry| entry.best_move());
         let mut best_move = None;
         let mut best_score = -INF;
-        let mut moves = if in_check {
-            refs.movegen.gen_moves::<Evasions>(refs.board)
+        let mut move_picker = if in_check {
+            MovePicker::evasions(tt_move)
         } else {
-            refs.movegen.gen_moves::<All>(refs.board)
+            MovePicker::new(tt_move, true)
         };
-        moves.score_moves(refs.board, tt_move);
         let mut legal_moves = 0;
 
-        for i in 0..moves.len() {
+        while let Some(m) = move_picker.next_move(refs.board, refs.movegen) {
             if info.should_stop() {
                 break;
             }
-
-            let m = moves.pick_next(i);
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
@@ -275,15 +270,14 @@ impl Search {
             best_score = alpha;
         }
 
-        let mut moves = if in_check {
-            refs.movegen.gen_moves::<Evasions>(refs.board)
+        let mut move_picker = if in_check {
+            MovePicker::evasions(None)
         } else {
-            refs.movegen.gen_moves::<Noisy>(refs.board)
+            MovePicker::new(None, false)
         };
-        moves.score_moves(refs.board, None);
         let mut legal_moves = 0;
 
-        for i in 0..moves.len() {
+        while let Some(m) = move_picker.next_move(refs.board, refs.movegen) {
             if info.should_stop() {
                 info.leaf();
                 return if legal_moves == 0 {
@@ -292,8 +286,6 @@ impl Search {
                     best_score
                 };
             }
-
-            let m = moves.pick_next(i);
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
