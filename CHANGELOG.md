@@ -1,9 +1,20 @@
 ## v0.7.0
 
+## Features
+
+- Staged movegen
+
+```
+Elo   | 88.98 +- 22.52 (95%)
+SPRT  | 10.0+0.10s Threads=1 Hash=256MB
+LLR   | 2.98 (-2.94, 2.94) [0.00, 5.00]
+Games | N: 782 W: 412 L: 216 D: 154
+Penta | [28, 44, 128, 86, 105]
+```
+
 ### Misc
 
 - Parse `ucinewgame` command
-- Staged movegen
 
 ### Fix
 
