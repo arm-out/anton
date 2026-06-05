@@ -1,8 +1,10 @@
+use arrayvec::ArrayVec;
+
 use crate::{
     board::{Board, piece::PieceType, square::Square},
     evaluation::{Score, evaluate_static},
     movegen::{
-        MoveGenerator,
+        MoveGenerator, MAX_MOVES,
         moves::{Move, MoveType},
     },
 };
@@ -57,7 +59,7 @@ impl Search {
         };
         let mut legal_moves = 0;
 
-        while let Some(m) = move_picker.next_move(refs.board, refs.movegen) {
+        while let Some(m) = move_picker.next_move(refs.board, refs.movegen, refs.history) {
             if best_move.is_some() && info.should_stop() {
                 break;
             }
@@ -177,10 +179,15 @@ impl Search {
         };
         let mut legal_moves = 0;
 
-        while let Some(m) = move_picker.next_move(refs.board, refs.movegen) {
+        let mut searched_quiets: ArrayVec<Move, MAX_MOVES> = ArrayVec::new();
+
+        while let Some(m) = move_picker.next_move(refs.board, refs.movegen, refs.history) {
             if info.should_stop() {
                 break;
             }
+
+            let color = refs.board.us();
+            let quiet = is_quiet_history_move(m);
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
@@ -210,10 +217,22 @@ impl Search {
 
             if alpha >= beta {
                 info.beta_cutoff();
-                if !info.stopped && is_killer_move(m) {
+                if !info.stopped && quiet {
+                    let bonus = Self::history_bonus(depth);
+
+                    Self::update_history(refs.history, color, m, bonus);
+
+                    for quiet in searched_quiets {
+                        Self::update_history(refs.history, color, quiet, -bonus);
+                    }
+
                     Self::update_killer(refs.killers, ply, m);
                 }
                 break;
+            }
+
+            if quiet {
+                searched_quiets.push(m);
             }
         }
 
@@ -284,7 +303,7 @@ impl Search {
         };
         let mut legal_moves = 0;
 
-        while let Some(m) = move_picker.next_move(refs.board, refs.movegen) {
+        while let Some(m) = move_picker.next_move(refs.board, refs.movegen, refs.history) {
             if info.should_stop() {
                 info.leaf();
                 return if legal_moves == 0 {
@@ -357,7 +376,7 @@ fn tt_cutoff(entry: TTEntry, depth: u8, alpha: Score, beta: Score, ply: u8) -> O
     }
 }
 
-fn is_killer_move(m: Move) -> bool {
+fn is_quiet_history_move(m: Move) -> bool {
     matches!(
         m.kind(),
         MoveType::Quiet
@@ -458,6 +477,7 @@ mod tests {
                 movegen: &search.movegen,
                 tt: &mut search.tt,
                 killers: &mut search.killers,
+                history: &mut search.history,
             },
             1,
             -10_001,
@@ -482,6 +502,7 @@ mod tests {
                 movegen: &search.movegen,
                 tt: &mut search.tt,
                 killers: &mut search.killers,
+                history: &mut search.history,
             },
             1,
             10_000,

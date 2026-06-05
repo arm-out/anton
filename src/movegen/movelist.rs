@@ -3,7 +3,7 @@ use arrayvec::ArrayVec;
 use crate::movegen::moves::Move;
 
 // https://www.chessprogramming.org/Encoding_Moves#Move_Index
-const MAX_MOVES: usize = 256;
+pub(crate) const MAX_MOVES: usize = 256;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) struct ScoredMove {

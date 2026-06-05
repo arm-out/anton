@@ -10,6 +10,8 @@ use crate::{
     },
 };
 
+use super::ButterflyHistory;
+
 #[derive(Copy, Clone)]
 enum Stage {
     TTMove,
@@ -59,7 +61,12 @@ impl MovePicker {
         }
     }
 
-    pub(super) fn next_move(&mut self, board: &Board, movegen: &MoveGenerator) -> Option<Move> {
+    pub(super) fn next_move(
+        &mut self,
+        board: &Board,
+        movegen: &MoveGenerator,
+        history: &ButterflyHistory,
+    ) -> Option<Move> {
         loop {
             match self.stage {
                 Stage::TTMove => {
@@ -70,7 +77,7 @@ impl MovePicker {
                 }
                 Stage::GenCaptures => {
                     self.moves = movegen.gen_moves::<Noisy>(board);
-                    score_moves(board, &mut self.moves);
+                    score_noisy(board, &mut self.moves);
                     self.idx = 0;
                     self.stage = Stage::Captures;
                 }
@@ -108,6 +115,7 @@ impl MovePicker {
                 Stage::Quiets => {
                     if self.gen_quiets {
                         self.moves = movegen.gen_moves::<Quiet>(board);
+                        score_quiets(board, history, &mut self.moves);
                         self.idx = 0;
                         self.gen_quiets = false;
                     }
@@ -126,7 +134,7 @@ impl MovePicker {
                 }
                 Stage::GenEvasions => {
                     self.moves = movegen.gen_moves::<Evasions>(board);
-                    score_moves(board, &mut self.moves);
+                    score_noisy(board, &mut self.moves);
                     self.idx = 0;
                     self.stage = Stage::Evasions;
                 }
@@ -176,9 +184,15 @@ impl MovePicker {
     }
 }
 
-fn score_moves(board: &Board, moves: &mut MoveList) {
+fn score_noisy(board: &Board, moves: &mut MoveList) {
     for scored in moves.iter_mut() {
         scored.score = score_move(board, scored.m);
+    }
+}
+
+fn score_quiets(board: &Board, history: &ButterflyHistory, moves: &mut MoveList) {
+    for scored in moves.iter_mut() {
+        scored.score = history[board.us()][scored.m.from()][scored.m.to()];
     }
 }
 
@@ -221,6 +235,12 @@ mod tests {
     use super::*;
     use crate::board::square::Square;
 
+    fn next_move(picker: &mut MovePicker, board: &Board, movegen: &MoveGenerator) -> Option<Move> {
+        let history = [[[0; 64]; 64]; 2];
+
+        picker.next_move(board, movegen, &history)
+    }
+
     #[test]
     fn tt_move_is_returned_first() {
         let board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
@@ -228,7 +248,7 @@ mod tests {
         let tt_move = Move::new(Square::E4, Square::E5, MoveType::Capture);
         let mut picker = MovePicker::new(Some(tt_move), [None, None], true);
 
-        assert_eq!(picker.next_move(&board, &movegen), Some(tt_move));
+        assert_eq!(next_move(&mut picker, &board, &movegen), Some(tt_move));
     }
 
     #[test]
@@ -239,7 +259,7 @@ mod tests {
         let mut picker = MovePicker::new(Some(tt_move), [None, None], true);
         let mut tt_count = 0;
 
-        while let Some(m) = picker.next_move(&board, &movegen) {
+        while let Some(m) = next_move(&mut picker, &board, &movegen) {
             if m == tt_move {
                 tt_count += 1;
             }
@@ -255,7 +275,7 @@ mod tests {
         let mut picker = MovePicker::new(None, [None, None], true);
         let mut seen_quiet = false;
 
-        while let Some(m) = picker.next_move(&board, &movegen) {
+        while let Some(m) = next_move(&mut picker, &board, &movegen) {
             if m.is_capture() || promotion_score(m) > 0 {
                 assert!(!seen_quiet);
             } else {
@@ -274,9 +294,9 @@ mod tests {
         let mut picker = MovePicker::new(Some(tt_move), [Some(tt_move), None], true);
         let mut tt_count = 0;
 
-        assert_eq!(picker.next_move(&board, &movegen), Some(tt_move));
+        assert_eq!(next_move(&mut picker, &board, &movegen), Some(tt_move));
 
-        while let Some(m) = picker.next_move(&board, &movegen) {
+        while let Some(m) = next_move(&mut picker, &board, &movegen) {
             if m == tt_move {
                 tt_count += 1;
             }
@@ -291,11 +311,11 @@ mod tests {
         let movegen = MoveGenerator::new();
         let killer = Move::new(Square::E1, Square::D1, MoveType::Quiet);
         let mut picker = MovePicker::new(None, [Some(killer), None], true);
-        let first = picker.next_move(&board, &movegen).unwrap();
+        let first = next_move(&mut picker, &board, &movegen).unwrap();
 
         assert!(first.is_capture() || promotion_score(first) > 0);
 
-        while let Some(m) = picker.next_move(&board, &movegen) {
+        while let Some(m) = next_move(&mut picker, &board, &movegen) {
             if m == killer {
                 return;
             }
@@ -313,7 +333,28 @@ mod tests {
         let killer = Move::new(Square::E1, Square::D1, MoveType::Quiet);
         let mut picker = MovePicker::new(None, [Some(killer), None], true);
 
-        assert_eq!(picker.next_move(&board, &movegen), Some(killer));
+        assert_eq!(next_move(&mut picker, &board, &movegen), Some(killer));
+    }
+
+    #[test]
+    fn quiets_are_ordered_by_history_after_killers() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let killer = Move::new(Square::E1, Square::D1, MoveType::Quiet);
+        let history_move = Move::new(Square::E1, Square::F1, MoveType::Quiet);
+        let mut history = [[[0; 64]; 64]; 2];
+        let mut picker = MovePicker::new(None, [Some(killer), None], true);
+
+        history[Color::White][Square::E1][Square::F1] = 100;
+
+        assert_eq!(
+            picker.next_move(&board, &movegen, &history),
+            Some(killer)
+        );
+        assert_eq!(
+            picker.next_move(&board, &movegen, &history),
+            Some(history_move)
+        );
     }
 
     #[test]
@@ -324,7 +365,7 @@ mod tests {
         let mut picker = MovePicker::new(None, [Some(killer), Some(killer)], true);
         let mut killer_count = 0;
 
-        while let Some(m) = picker.next_move(&board, &movegen) {
+        while let Some(m) = next_move(&mut picker, &board, &movegen) {
             if m == killer {
                 killer_count += 1;
             }
@@ -340,7 +381,7 @@ mod tests {
         let killer = Move::new(Square::E1, Square::D1, MoveType::Quiet);
         let mut picker = MovePicker::new(None, [Some(killer), None], false);
 
-        while let Some(m) = picker.next_move(&board, &movegen) {
+        while let Some(m) = next_move(&mut picker, &board, &movegen) {
             assert!(m.is_capture() || promotion_score(m) > 0);
             assert_ne!(m, killer);
         }
@@ -355,7 +396,7 @@ mod tests {
         let mut picker = MovePicker::new(None, [None, None], true);
         let mut count = 0;
 
-        while picker.next_move(&board, &movegen).is_some() {
+        while next_move(&mut picker, &board, &movegen).is_some() {
             count += 1;
         }
 
@@ -368,7 +409,7 @@ mod tests {
         let movegen = MoveGenerator::new();
         let mut picker = MovePicker::new(None, [None, None], false);
 
-        while let Some(m) = picker.next_move(&board, &movegen) {
+        while let Some(m) = next_move(&mut picker, &board, &movegen) {
             assert!(m.is_capture() || promotion_score(m) > 0);
         }
     }
@@ -380,7 +421,7 @@ mod tests {
         let tt_move = Move::new(Square::E1, Square::E2, MoveType::Capture);
         let mut picker = MovePicker::evasions(Some(tt_move));
 
-        assert_eq!(picker.next_move(&board, &movegen), Some(tt_move));
+        assert_eq!(next_move(&mut picker, &board, &movegen), Some(tt_move));
     }
 
     #[test]
@@ -391,7 +432,7 @@ mod tests {
         let mut picker = MovePicker::evasions(None);
         let mut count = 0;
 
-        while picker.next_move(&board, &movegen).is_some() {
+        while next_move(&mut picker, &board, &movegen).is_some() {
             count += 1;
         }
 
