@@ -22,6 +22,16 @@ Games | N: 304 W: 161 L: 67 D: 76
 Penta | [3, 19, 51, 39, 40]
 ```
 
+- Butterfly History
+
+```
+Elo   | 32.84 +- 25.25 (95%)
+SPRT  | 10.0+0.10s Threads=1 Hash=256MB
+LLR   | 1.48 (-2.94, 2.94) [0.00, 10.00]
+Games | N: 520 W: 220 L: 171 D: 129
+Penta | [22, 46, 99, 47, 46]
+```
+
 ### Misc
 
 - Parse `ucinewgame` command
