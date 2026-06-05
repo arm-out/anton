@@ -1,7 +1,7 @@
 use crate::{
     board::{Board, piece::PieceType, square::Square},
     evaluation::{Score, evaluate_static},
-    movegen::MoveGenerator,
+    movegen::{MoveGenerator, moves::{Move, MoveType}},
 };
 
 use super::{
@@ -50,7 +50,7 @@ impl Search {
         let mut move_picker = if in_check {
             MovePicker::evasions(tt_move)
         } else {
-            MovePicker::new(tt_move, true)
+            MovePicker::new(tt_move, [None, None], true)
         };
         let mut legal_moves = 0;
 
@@ -164,12 +164,13 @@ impl Search {
         }
 
         let tt_move = tt_entry.map(|entry| entry.best_move());
+        let killers = Self::killer_moves(refs.killers, ply);
         let mut best_move = None;
         let mut best_score = -INF;
         let mut move_picker = if in_check {
             MovePicker::evasions(tt_move)
         } else {
-            MovePicker::new(tt_move, true)
+            MovePicker::new(tt_move, killers, true)
         };
         let mut legal_moves = 0;
 
@@ -206,6 +207,9 @@ impl Search {
 
             if alpha >= beta {
                 info.beta_cutoff();
+                if !info.stopped && is_killer_move(m) {
+                    Self::update_killer(refs.killers, ply, m);
+                }
                 break;
             }
         }
@@ -273,7 +277,7 @@ impl Search {
         let mut move_picker = if in_check {
             MovePicker::evasions(None)
         } else {
-            MovePicker::new(None, false)
+            MovePicker::new(None, [None, None], false)
         };
         let mut legal_moves = 0;
 
@@ -348,6 +352,16 @@ fn tt_cutoff(entry: TTEntry, depth: u8, alpha: Score, beta: Score, ply: u8) -> O
         Bound::Upper if score <= alpha => Some(score),
         _ => None,
     }
+}
+
+fn is_killer_move(m: Move) -> bool {
+    matches!(
+        m.kind(),
+        MoveType::Quiet
+            | MoveType::DoublePawnPush
+            | MoveType::CastleKingside
+            | MoveType::CastleQueenside
+    )
 }
 
 fn score_to_tt(score: Score, ply: u8) -> Score {
@@ -440,6 +454,7 @@ mod tests {
                 board: &mut board,
                 movegen: &search.movegen,
                 tt: &mut search.tt,
+                killers: &mut search.killers,
             },
             1,
             -10_001,
@@ -463,6 +478,7 @@ mod tests {
                 board: &mut board,
                 movegen: &search.movegen,
                 tt: &mut search.tt,
+                killers: &mut search.killers,
             },
             1,
             10_000,
