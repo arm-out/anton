@@ -1,7 +1,10 @@
 use crate::{
     board::{Board, piece::PieceType, square::Square},
     evaluation::{Score, evaluate_static},
-    movegen::{MoveGenerator, moves::{Move, MoveType}},
+    movegen::{
+        MoveGenerator,
+        moves::{Move, MoveType},
+    },
 };
 
 use super::{
@@ -186,7 +189,7 @@ impl Search {
             legal_moves += 1;
 
             // PVS search
-            let mut score = if legal_moves == 1 {
+            let mut score = if is_pv && legal_moves == 1 {
                 -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info)
             } else {
                 let null_beta = alpha.saturating_add(1);
