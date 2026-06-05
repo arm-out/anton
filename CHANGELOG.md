@@ -2,7 +2,7 @@
 
 ## Features
 
-- Staged movegen
+- Staged movegen/movepicker
 
 ```
 Elo   | 88.98 +- 22.52 (95%)
