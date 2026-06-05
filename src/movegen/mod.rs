@@ -132,6 +132,109 @@ impl MoveGenerator {
         ml
     }
 
+    pub fn is_pseudolegal_killer(&self, board: &Board, m: Move) -> bool {
+        let from = m.from();
+        let to = m.to();
+
+        if from == Square::None || to == Square::None {
+            return false;
+        }
+
+        let piece = board.get_piece_at(from);
+        if piece == Piece::None || piece.color() != board.us() {
+            return false;
+        }
+
+        match m.kind() {
+            MoveType::Quiet => {
+                board.get_piece_at(to) == Piece::None
+                    && self.pseudolegal_quiet_piece_move(board, piece.ptype(), from, to)
+            }
+            MoveType::DoublePawnPush => {
+                piece.ptype() == PieceType::Pawn
+                    && board.get_piece_at(to) == Piece::None
+                    && self.pseudolegal_double_pawn_push(board, from, to)
+            }
+            MoveType::CastleKingside | MoveType::CastleQueenside => {
+                piece.ptype() == PieceType::King && self.pseudolegal_castle(board, m)
+            }
+            _ => false,
+        }
+    }
+
+    fn pseudolegal_quiet_piece_move(
+        &self,
+        board: &Board,
+        piece_type: PieceType,
+        from: Square,
+        to: Square,
+    ) -> bool {
+        match piece_type {
+            PieceType::Pawn => self.pseudolegal_single_pawn_push(board.us(), from, to)
+                && !Bitboard::promotion_rank(board.us()).contains(to),
+            PieceType::Knight => self.knight_moves[from].contains(to),
+            PieceType::Bishop => self.get_bishop_attacks(from, board.get_occupancy()).contains(to),
+            PieceType::Rook => self.get_rook_attacks(from, board.get_occupancy()).contains(to),
+            PieceType::Queen => self.get_queen_attacks(from, board.get_occupancy()).contains(to),
+            PieceType::King => self.king_moves[from].contains(to),
+            PieceType::None => false,
+        }
+    }
+
+    fn pseudolegal_single_pawn_push(&self, color: Color, from: Square, to: Square) -> bool {
+        let step = match color {
+            Color::White => from.try_offset(0, 1),
+            Color::Black => from.try_offset(0, -1),
+        };
+
+        step == Some(to)
+    }
+
+    fn pseudolegal_double_pawn_push(&self, board: &Board, from: Square, to: Square) -> bool {
+        let (one_step, start_rank) = match board.us() {
+            Color::White => (from.try_offset(0, 1), 1),
+            Color::Black => (from.try_offset(0, -1), 6),
+        };
+
+        let two_step = match board.us() {
+            Color::White => from.try_offset(0, 2),
+            Color::Black => from.try_offset(0, -2),
+        };
+
+        from.rank() as u8 == start_rank
+            && two_step == Some(to)
+            && one_step.is_some_and(|square| board.get_piece_at(square) == Piece::None)
+    }
+
+    fn pseudolegal_castle(&self, board: &Board, m: Move) -> bool {
+        let color = board.us();
+        let king_from = match color {
+            Color::White => Square::E1,
+            Color::Black => Square::E8,
+        };
+        let king = match color {
+            Color::White => Piece::WhiteKing,
+            Color::Black => Piece::BlackKing,
+        };
+
+        if m.from() != king_from
+            || board.get_piece_at(king_from) != king
+            || self.is_attacked(board, king_from, !color)
+        {
+            return false;
+        }
+
+        let kind = match (color, m.kind(), m.to()) {
+            (Color::White, MoveType::CastleKingside, Square::G1) => CastlingKind::WhiteKingside,
+            (Color::White, MoveType::CastleQueenside, Square::C1) => CastlingKind::WhiteQueenside,
+            (Color::Black, MoveType::CastleKingside, Square::G8) => CastlingKind::BlackKingside,
+            (Color::Black, MoveType::CastleQueenside, Square::C8) => CastlingKind::BlackQueenside,
+            _ => return false,
+        };
+
+        self.can_castle(board, color, kind)
+    }
+
     fn gen_evasions(&self, board: &Board) -> MoveList {
         let mut ml = MoveList::default();
         let color = board.us();
@@ -862,6 +965,42 @@ mod tests {
                 MoveType::CastleKingside | MoveType::CastleQueenside
             )
         }));
+    }
+
+    #[test]
+    fn is_pseudolegal_killer_accepts_generated_quiet_move() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let m = Move::new(Square::E2, Square::E4, MoveType::DoublePawnPush);
+
+        assert!(movegen.is_pseudolegal_killer(&board, m));
+    }
+
+    #[test]
+    fn is_pseudolegal_killer_rejects_move_from_empty_square() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let m = Move::new(Square::D2, Square::D4, MoveType::DoublePawnPush);
+
+        assert!(!movegen.is_pseudolegal_killer(&board, m));
+    }
+
+    #[test]
+    fn is_pseudolegal_killer_rejects_blocked_quiet_move() {
+        let board = Board::from_fen("4k3/8/8/8/8/4P3/4P3/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let m = Move::new(Square::E2, Square::E4, MoveType::DoublePawnPush);
+
+        assert!(!movegen.is_pseudolegal_killer(&board, m));
+    }
+
+    #[test]
+    fn is_pseudolegal_killer_accepts_castling_when_generated() {
+        let board = Board::from_fen("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let m = Move::new(Square::E1, Square::G1, MoveType::CastleKingside);
+
+        assert!(movegen.is_pseudolegal_killer(&board, m));
     }
 
     #[test]

@@ -15,6 +15,8 @@ enum Stage {
     TTMove,
     GenCaptures,
     Captures,
+    Killer1,
+    Killer2,
     Quiets,
     TTEvasion,
     GenEvasions,
@@ -25,16 +27,20 @@ enum Stage {
 pub(super) struct MovePicker {
     stage: Stage,
     tt_move: Option<Move>,
+    killers: [Option<Move>; 2],
+    returned_killers: [bool; 2],
     gen_quiets: bool,
     moves: MoveList,
     idx: usize,
 }
 
 impl MovePicker {
-    pub(super) fn new(tt_move: Option<Move>, gen_quiets: bool) -> Self {
+    pub(super) fn new(tt_move: Option<Move>, killers: [Option<Move>; 2], gen_quiets: bool) -> Self {
         Self {
             stage: Stage::TTMove,
             tt_move,
+            killers,
+            returned_killers: [false; 2],
             gen_quiets,
             moves: MoveList::default(),
             idx: 0,
@@ -45,6 +51,8 @@ impl MovePicker {
         Self {
             stage: Stage::TTEvasion,
             tt_move,
+            killers: [None, None],
+            returned_killers: [false; 2],
             gen_quiets: true,
             moves: MoveList::default(),
             idx: 0,
@@ -71,7 +79,31 @@ impl MovePicker {
                         return Some(m);
                     }
 
+                    self.stage = Stage::Killer1;
+                }
+                Stage::Killer1 => {
+                    self.stage = Stage::Killer2;
+
+                    if self.gen_quiets
+                        && let Some(m) = self.killers[0]
+                        && self.should_return_killer(m, 0)
+                        && movegen.is_pseudolegal_killer(board, m)
+                    {
+                        self.returned_killers[0] = true;
+                        return Some(m);
+                    }
+                }
+                Stage::Killer2 => {
                     self.stage = Stage::Quiets;
+
+                    if self.gen_quiets
+                        && let Some(m) = self.killers[1]
+                        && self.should_return_killer(m, 1)
+                        && movegen.is_pseudolegal_killer(board, m)
+                    {
+                        self.returned_killers[1] = true;
+                        return Some(m);
+                    }
                 }
                 Stage::Quiets => {
                     if self.gen_quiets {
@@ -119,10 +151,28 @@ impl MovePicker {
                 continue;
             }
 
+            if matches!(self.stage, Stage::Quiets) && self.returned_killer(m) {
+                continue;
+            }
+
             return Some(m);
         }
 
         None
+    }
+
+    fn should_return_killer(&self, m: Move, slot: usize) -> bool {
+        Some(m) != self.tt_move && (slot == 0 || Some(m) != self.killers[0])
+    }
+
+    fn returned_killer(&self, m: Move) -> bool {
+        for slot in 0..self.killers.len() {
+            if self.returned_killers[slot] && self.killers[slot] == Some(m) {
+                return true;
+            }
+        }
+
+        false
     }
 }
 
@@ -176,7 +226,7 @@ mod tests {
         let board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let tt_move = Move::new(Square::E4, Square::E5, MoveType::Capture);
-        let mut picker = MovePicker::new(Some(tt_move), true);
+        let mut picker = MovePicker::new(Some(tt_move), [None, None], true);
 
         assert_eq!(picker.next_move(&board, &movegen), Some(tt_move));
     }
@@ -186,7 +236,7 @@ mod tests {
         let board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let tt_move = Move::new(Square::E4, Square::E5, MoveType::Capture);
-        let mut picker = MovePicker::new(Some(tt_move), true);
+        let mut picker = MovePicker::new(Some(tt_move), [None, None], true);
         let mut tt_count = 0;
 
         while let Some(m) = picker.next_move(&board, &movegen) {
@@ -202,7 +252,7 @@ mod tests {
     fn captures_are_returned_before_quiets() {
         let board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
         let movegen = MoveGenerator::new();
-        let mut picker = MovePicker::new(None, true);
+        let mut picker = MovePicker::new(None, [None, None], true);
         let mut seen_quiet = false;
 
         while let Some(m) = picker.next_move(&board, &movegen) {
@@ -217,12 +267,92 @@ mod tests {
     }
 
     #[test]
+    fn tt_move_is_returned_before_same_killer_once() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let tt_move = Move::new(Square::E1, Square::D1, MoveType::Quiet);
+        let mut picker = MovePicker::new(Some(tt_move), [Some(tt_move), None], true);
+        let mut tt_count = 0;
+
+        assert_eq!(picker.next_move(&board, &movegen), Some(tt_move));
+
+        while let Some(m) = picker.next_move(&board, &movegen) {
+            if m == tt_move {
+                tt_count += 1;
+            }
+        }
+
+        assert_eq!(tt_count, 0);
+    }
+
+    #[test]
+    fn captures_are_returned_before_killers() {
+        let board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let killer = Move::new(Square::E1, Square::D1, MoveType::Quiet);
+        let mut picker = MovePicker::new(None, [Some(killer), None], true);
+        let first = picker.next_move(&board, &movegen).unwrap();
+
+        assert!(first.is_capture() || promotion_score(first) > 0);
+
+        while let Some(m) = picker.next_move(&board, &movegen) {
+            if m == killer {
+                return;
+            }
+
+            assert!(m.is_capture() || promotion_score(m) > 0);
+        }
+
+        panic!("killer move was not returned");
+    }
+
+    #[test]
+    fn killer_quiets_are_returned_before_other_quiets() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let killer = Move::new(Square::E1, Square::D1, MoveType::Quiet);
+        let mut picker = MovePicker::new(None, [Some(killer), None], true);
+
+        assert_eq!(picker.next_move(&board, &movegen), Some(killer));
+    }
+
+    #[test]
+    fn duplicate_killers_are_returned_once() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let killer = Move::new(Square::E1, Square::D1, MoveType::Quiet);
+        let mut picker = MovePicker::new(None, [Some(killer), Some(killer)], true);
+        let mut killer_count = 0;
+
+        while let Some(m) = picker.next_move(&board, &movegen) {
+            if m == killer {
+                killer_count += 1;
+            }
+        }
+
+        assert_eq!(killer_count, 1);
+    }
+
+    #[test]
+    fn killers_are_skipped_with_quiets() {
+        let board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let killer = Move::new(Square::E1, Square::D1, MoveType::Quiet);
+        let mut picker = MovePicker::new(None, [Some(killer), None], false);
+
+        while let Some(m) = picker.next_move(&board, &movegen) {
+            assert!(m.is_capture() || promotion_score(m) > 0);
+            assert_ne!(m, killer);
+        }
+    }
+
+    #[test]
     fn main_mode_returns_all_noisy_and_quiet_moves() {
         let board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
         let movegen = MoveGenerator::new();
         let noisy = movegen.gen_moves::<Noisy>(&board);
         let quiet = movegen.gen_moves::<Quiet>(&board);
-        let mut picker = MovePicker::new(None, true);
+        let mut picker = MovePicker::new(None, [None, None], true);
         let mut count = 0;
 
         while picker.next_move(&board, &movegen).is_some() {
@@ -236,7 +366,7 @@ mod tests {
     fn quiets_can_be_skipped() {
         let board = Board::from_fen("4k3/8/8/4q3/4R3/8/8/4K3 w - - 0 1").unwrap();
         let movegen = MoveGenerator::new();
-        let mut picker = MovePicker::new(None, false);
+        let mut picker = MovePicker::new(None, [None, None], false);
 
         while let Some(m) = picker.next_move(&board, &movegen) {
             assert!(m.is_capture() || promotion_score(m) > 0);

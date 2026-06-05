@@ -12,6 +12,16 @@ Games | N: 782 W: 412 L: 216 D: 154
 Penta | [28, 44, 128, 86, 105]
 ```
 
+- Killer moves
+
+```
+Elo   | 111.07 +- 33.82 (95%)
+SPRT  | 10.0+0.10s Threads=1 Hash=256MB
+LLR   | 3.04 (-2.94, 2.94) [0.00, 10.00]
+Games | N: 304 W: 161 L: 67 D: 76
+Penta | [3, 19, 51, 39, 40]
+```
+
 ### Misc
 
 - Parse `ucinewgame` command

@@ -20,6 +20,9 @@ use self::{
 
 const DEFAULT_SEARCH_DEPTH: u8 = 5;
 const MAX_SEARCH_DEPTH: u8 = u8::MAX;
+const KILLER_SLOTS: usize = 2;
+
+type KillerTable = [[Option<Move>; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SearchLimit {
@@ -52,6 +55,7 @@ struct SearchRefs<'a> {
     board: &'a mut Board,
     movegen: &'a MoveGenerator,
     tt: &'a mut TranspositionTable,
+    killers: &'a mut KillerTable,
 }
 
 struct SearchInfo {
@@ -130,6 +134,7 @@ impl SearchInfo {
 pub struct Search {
     movegen: MoveGenerator,
     tt: TranspositionTable,
+    killers: KillerTable,
 }
 
 impl Search {
@@ -137,16 +142,19 @@ impl Search {
         Self {
             movegen: MoveGenerator::new(),
             tt: TranspositionTable::new(size_mb),
+            killers: [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize],
         }
     }
 
     pub fn search(&mut self, board: &mut Board, limit: SearchLimit) -> SearchResult {
         let mut info = SearchInfo::new(limit);
+        self.clear_killers();
         let max_depth = info.max_depth();
         let mut best_result = None;
         let mut last_score = 0;
         let movegen = &self.movegen;
         let tt = &mut self.tt;
+        let killers = &mut self.killers;
 
         for depth in 1..=max_depth {
             if depth > 1 && info.stop_if_expired() {
@@ -164,6 +172,7 @@ impl Search {
                         board,
                         movegen,
                         tt: &mut *tt,
+                        killers: &mut *killers,
                     },
                     depth,
                     alpha,
@@ -207,15 +216,18 @@ impl Search {
 
     pub fn clear(&mut self) {
         self.tt.clear();
+        self.clear_killers();
     }
 
     pub fn search_depth(&mut self, board: &mut Board, depth: u8) -> SearchResult {
         let mut info = SearchInfo::new(SearchLimit::Depth(depth));
+        self.clear_killers();
         Self::search_depth_inner(
             SearchRefs {
                 board,
                 movegen: &self.movegen,
                 tt: &mut self.tt,
+                killers: &mut self.killers,
             },
             depth,
             -INF,
@@ -248,6 +260,30 @@ impl Search {
         }
 
         None
+    }
+
+    fn clear_killers(&mut self) {
+        self.killers = [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
+    }
+
+    fn killer_moves(killers: &KillerTable, ply: u8) -> [Option<Move>; KILLER_SLOTS] {
+        killers
+            .get(ply as usize)
+            .copied()
+            .unwrap_or([None; KILLER_SLOTS])
+    }
+
+    fn update_killer(killers: &mut KillerTable, ply: u8, m: Move) {
+        let Some(killers) = killers.get_mut(ply as usize) else {
+            return;
+        };
+
+        if killers[0] == Some(m) {
+            return;
+        }
+
+        killers[1] = killers[0];
+        killers[0] = Some(m);
     }
 }
 
@@ -292,7 +328,10 @@ fn is_mate_score(score: Score) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::square::Square;
+    use crate::{
+        board::square::Square,
+        movegen::moves::{Move, MoveType},
+    };
 
     #[test]
     fn searches_two_plies_and_returns_a_move() {
@@ -510,5 +549,41 @@ mod tests {
 
         assert!(result.best_move.is_none());
         assert_eq!(result.score, 0);
+    }
+
+    #[test]
+    fn update_killer_stores_move_at_ply() {
+        let mut killers = [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
+        let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+
+        Search::update_killer(&mut killers, 3, m);
+
+        assert_eq!(Search::killer_moves(&killers, 3), [Some(m), None]);
+    }
+
+    #[test]
+    fn update_killer_does_not_duplicate_same_move() {
+        let mut killers = [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
+        let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+
+        Search::update_killer(&mut killers, 3, m);
+        Search::update_killer(&mut killers, 3, m);
+
+        assert_eq!(Search::killer_moves(&killers, 3), [Some(m), None]);
+    }
+
+    #[test]
+    fn update_killer_shifts_previous_move() {
+        let mut killers = [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
+        let first = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+        let second = Move::new(Square::D2, Square::D4, MoveType::Quiet);
+
+        Search::update_killer(&mut killers, 3, first);
+        Search::update_killer(&mut killers, 3, second);
+
+        assert_eq!(
+            Search::killer_moves(&killers, 3),
+            [Some(second), Some(first)]
+        );
     }
 }
