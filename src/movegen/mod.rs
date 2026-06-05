@@ -18,7 +18,7 @@ mod magic;
 mod movelist;
 pub mod moves;
 
-pub(crate) use movelist::MoveList;
+pub(crate) use movelist::{MAX_MOVES, MoveList};
 
 #[derive(Debug)]
 pub struct MoveGenerator {
