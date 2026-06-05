@@ -315,7 +315,7 @@ impl Search {
         Self::update_history_entry(history, color, m, bonus);
 
         for quiet in searched_quiets {
-            Self::update_history_entry(history, color, *quiet, -bonus);
+            Self::update_history_entry(history, color, *quiet, -bonus / 2);
         }
     }
 
