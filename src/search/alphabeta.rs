@@ -218,14 +218,7 @@ impl Search {
             if alpha >= beta {
                 info.beta_cutoff();
                 if !info.stopped && quiet {
-                    let bonus = Self::history_bonus(depth);
-
-                    Self::update_history(refs.history, color, m, bonus);
-
-                    for quiet in searched_quiets {
-                        Self::update_history(refs.history, color, quiet, -bonus);
-                    }
-
+                    Self::update_history(refs.history, color, m, depth, &searched_quiets);
                     Self::update_killer(refs.killers, ply, m);
                 }
                 break;

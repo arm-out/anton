@@ -303,7 +303,23 @@ impl Search {
         (16 * i32::from(depth) * i32::from(depth)).min(2000) as i16
     }
 
-    fn update_history(history: &mut ButterflyHistory, color: Color, m: Move, bonus: i16) {
+    fn update_history(
+        history: &mut ButterflyHistory,
+        color: Color,
+        m: Move,
+        depth: u8,
+        searched_quiets: &[Move],
+    ) {
+        let bonus = Self::history_bonus(depth);
+
+        Self::update_history_entry(history, color, m, bonus);
+
+        for quiet in searched_quiets {
+            Self::update_history_entry(history, color, *quiet, -bonus);
+        }
+    }
+
+    fn update_history_entry(history: &mut ButterflyHistory, color: Color, m: Move, bonus: i16) {
         let entry = &mut history[color][m.from()][m.to()];
         let gravity = i32::from(*entry) * i32::from(bonus.abs()) / i32::from(MAX_HISTORY);
         let updated = i32::from(*entry) + i32::from(bonus) - gravity;
@@ -624,14 +640,14 @@ mod tests {
         let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
 
         for _ in 0..64 {
-            Search::update_history(&mut history, Color::White, m, 2000);
+            Search::update_history_entry(&mut history, Color::White, m, 2000);
         }
 
         assert!(history[Color::White][Square::E2][Square::E4] <= MAX_HISTORY);
         assert!(history[Color::White][Square::E2][Square::E4] > 0);
 
         for _ in 0..128 {
-            Search::update_history(&mut history, Color::White, m, -2000);
+            Search::update_history_entry(&mut history, Color::White, m, -2000);
         }
 
         assert!(history[Color::White][Square::E2][Square::E4] >= -MAX_HISTORY);
@@ -643,11 +659,27 @@ mod tests {
         let mut search = Search::new(DEFAULT_TT_SIZE_MB);
         let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
 
-        Search::update_history(&mut search.history, Color::White, m, 2000);
+        Search::update_history_entry(&mut search.history, Color::White, m, 2000);
         assert_ne!(search.history[Color::White][Square::E2][Square::E4], 0);
 
         search.clear();
 
         assert_eq!(search.history[Color::White][Square::E2][Square::E4], 0);
+    }
+
+    #[test]
+    fn update_history_rewards_cutoff_and_maluses_searched_quiets() {
+        let mut history = [[[0; Square::COUNT]; Square::COUNT]; Color::COUNT];
+        let cutoff = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+        let searched = [
+            Move::new(Square::D2, Square::D4, MoveType::Quiet),
+            Move::new(Square::G1, Square::F3, MoveType::Quiet),
+        ];
+
+        Search::update_history(&mut history, Color::White, cutoff, 2, &searched);
+
+        assert_eq!(history[Color::White][Square::E2][Square::E4], 64);
+        assert_eq!(history[Color::White][Square::D2][Square::D4], -64);
+        assert_eq!(history[Color::White][Square::G1][Square::F3], -64);
     }
 }
