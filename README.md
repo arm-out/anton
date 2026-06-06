@@ -4,7 +4,8 @@
 
 |                            version                            | feature                                                    |                           selfplay<br>[20+0.2]                           |                                            estimated elo<br>[40+0.4]                                            | CCRL<br>40/15 |
 | :-----------------------------------------------------------: | ---------------------------------------------------------- | :----------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------: | :-----------: |
-| [0.6.0](https://github.com/arm-out/anton/releases/tag/v0.6.0) | tuned evaluation weights, pawn terms                       |    [+95.8](https://github.com/arm-out/anton/pull/11#issue-4585845865)    |                     [2075](https://github.com/arm-out/anton/pull/11#issuecomment-4623592649)                    |               |
+| [0.7.0](https://github.com/arm-out/anton/releases/tag/v0.7.0) | staged movegen, killer moves, butterfly history            |   [+227.2](https://github.com/arm-out/anton/pull/19#issue-4604924473)    |                                                                                                                 |               |
+| [0.6.0](https://github.com/arm-out/anton/releases/tag/v0.6.0) | tuned evaluation weights, pawn terms                       |    [+95.8](https://github.com/arm-out/anton/pull/11#issue-4585845865)    |                    [2075](https://github.com/arm-out/anton/pull/11#issuecomment-4623592649)                     |               |
 | [0.5.0](https://github.com/arm-out/anton/releases/tag/v0.5.0) | PVS, aspiration window, reverse futility pruning           | [+55.1](https://github.com/arm-out/anton/pull/8#issuecomment-4587716714) |                     [1934](https://github.com/arm-out/anton/pull/8#issuecomment-4595532644)                     |               |
 | [0.4.0](https://github.com/arm-out/anton/releases/tag/v0.4.0) | quiescent search, transposition table and TT move ordering |    [+562.6](https://github.com/arm-out/anton/pull/4#issue-4543080049)    |                    [1844](https://github.com/arm-out/anton/pull/4/#issuecomment-4575416596)                     |               |
 | [0.3.0](https://github.com/arm-out/anton/releases/tag/v0.3.0) | piece square tables and tapered evaluation                 |    [+52.3](https://github.com/arm-out/anton/pull/3#issue-4535688723)     |                     [1224](https://github.com/arm-out/anton/pull/3#issuecomment-4560418705)                     |               |
@@ -17,7 +18,10 @@
 
 - NegaMax
 - Iterative Deepening
-- Move Ordering (TT Move)
+- Move Ordering
+    - TT Move
+    - Killer Moves
+    - Butterfly History Heuristic
 - Quiescent Search
 - Transposition Table
 - Aspiration Window
@@ -46,3 +50,4 @@
 - Magic Bitboards
 - Zobrist hashing
 - MVV-LVA Heuristic
+- Texel tuning
