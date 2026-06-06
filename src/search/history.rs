@@ -150,8 +150,7 @@ impl<'a> HistoryView<'a> {
             current,
         );
 
-        // history + continuation1 + continuation2
-        (2 * history) + continuation1 / 2 + continuation2 / 4
+        history + continuation1 / 2 + continuation2 / 4
     }
 }
 
