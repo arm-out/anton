@@ -1,5 +1,15 @@
 ## v0.7.0
 
+## Regression
+
+```
+Elo   | 227.17 +- 47.78 (95%)
+SPRT  | 40.0+0.40s Threads=1 Hash=256MB
+LLR   | 3.04 (-2.94, 2.94) [0.00, 10.00]
+Games | N: 202 W: 140 L: 24 D: 38
+Penta | [0, 2, 25, 30, 44]
+```
+
 ## Features
 
 - Staged movegen/movepicker
