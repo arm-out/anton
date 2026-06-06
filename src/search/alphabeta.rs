@@ -11,6 +11,7 @@ use crate::{
 
 use super::{
     Search, SearchInfo, SearchRefs, SearchResult, is_mate_score,
+    history::{clear_stack_entry, set_stack_move},
     movepicker::MovePicker,
     transposition::{Bound, TTEntry},
 };
@@ -59,15 +60,22 @@ impl Search {
         };
         let mut legal_moves = 0;
 
-        while let Some(m) = move_picker.next_move(refs.board, refs.movegen, refs.history) {
+        while let Some(m) = move_picker.next_move(
+            refs.board,
+            refs.movegen,
+            refs.history.view(refs.stack, ROOT_PLY),
+        ) {
             if best_move.is_some() && info.should_stop() {
                 break;
             }
+
+            let piece = refs.board.get_piece_at(m.from());
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
             }
 
+            set_stack_move(refs.stack, ROOT_PLY, piece, m);
             legal_moves += 1;
             let score = -Self::negamax(
                 &mut refs,
@@ -78,6 +86,7 @@ impl Search {
                 info,
             );
             refs.board.unmake();
+            clear_stack_entry(refs.stack, ROOT_PLY);
 
             if best_move.is_none() || score > best_score {
                 best_score = score;
@@ -181,18 +190,22 @@ impl Search {
 
         let mut searched_quiets: ArrayVec<Move, MAX_MOVES> = ArrayVec::new();
 
-        while let Some(m) = move_picker.next_move(refs.board, refs.movegen, refs.history) {
+        while let Some(m) =
+            move_picker.next_move(refs.board, refs.movegen, refs.history.view(refs.stack, ply))
+        {
             if info.should_stop() {
                 break;
             }
 
             let color = refs.board.us();
             let quiet = is_quiet_history_move(m);
+            let piece = refs.board.get_piece_at(m.from());
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
             }
 
+            set_stack_move(refs.stack, ply, piece, m);
             legal_moves += 1;
 
             // PVS search
@@ -208,6 +221,7 @@ impl Search {
                 score = -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info);
             }
             refs.board.unmake();
+            clear_stack_entry(refs.stack, ply);
 
             if best_move.is_none() || score > best_score {
                 best_score = score;
@@ -218,7 +232,8 @@ impl Search {
             if alpha >= beta {
                 info.beta_cutoff();
                 if !info.stopped && quiet {
-                    Self::update_history(refs.history, color, m, depth, &searched_quiets);
+                    refs.history
+                        .update(refs.stack, ply, refs.board, color, m, depth, &searched_quiets);
                     Self::update_killer(refs.killers, ply, m);
                 }
                 break;
@@ -296,7 +311,9 @@ impl Search {
         };
         let mut legal_moves = 0;
 
-        while let Some(m) = move_picker.next_move(refs.board, refs.movegen, refs.history) {
+        while let Some(m) =
+            move_picker.next_move(refs.board, refs.movegen, refs.history.view(refs.stack, ply))
+        {
             if info.should_stop() {
                 info.leaf();
                 return if legal_moves == 0 {
@@ -306,13 +323,17 @@ impl Search {
                 };
             }
 
+            let piece = refs.board.get_piece_at(m.from());
+
             if !refs.board.make(m, refs.movegen) {
                 continue;
             }
 
+            set_stack_move(refs.stack, ply, piece, m);
             legal_moves += 1;
             let score = -Self::quiescence(refs, -beta, -alpha, ply + 1, info);
             refs.board.unmake();
+            clear_stack_entry(refs.stack, ply);
 
             best_score = best_score.max(score);
             alpha = alpha.max(score);
@@ -471,6 +492,7 @@ mod tests {
                 tt: &mut search.tt,
                 killers: &mut search.killers,
                 history: &mut search.history,
+                stack: &mut search.stack,
             },
             1,
             -10_001,
@@ -496,6 +518,7 @@ mod tests {
                 tt: &mut search.tt,
                 killers: &mut search.killers,
                 history: &mut search.history,
+                stack: &mut search.stack,
             },
             1,
             10_000,

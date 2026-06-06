@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::ButterflyHistory;
+use super::history::HistoryView;
 
 #[derive(Copy, Clone)]
 enum Stage {
@@ -65,7 +65,7 @@ impl MovePicker {
         &mut self,
         board: &Board,
         movegen: &MoveGenerator,
-        history: &ButterflyHistory,
+        history: HistoryView<'_>,
     ) -> Option<Move> {
         loop {
             match self.stage {
@@ -190,13 +190,13 @@ fn score_noisy(board: &Board, moves: &mut MoveList) {
     }
 }
 
-fn score_quiets(board: &Board, history: &ButterflyHistory, moves: &mut MoveList) {
+fn score_quiets(board: &Board, history: HistoryView<'_>, moves: &mut MoveList) {
     for scored in moves.iter_mut() {
-        scored.score = history[board.us()][scored.m.from()][scored.m.to()];
+        scored.score = history.quiet_score(board, scored.m);
     }
 }
 
-fn score_move(board: &Board, m: Move) -> i16 {
+fn score_move(board: &Board, m: Move) -> i32 {
     let promotion_score = promotion_score(m);
 
     if !m.is_capture() {
@@ -205,12 +205,12 @@ fn score_move(board: &Board, m: Move) -> i16 {
 
     let attacker = board.get_piece_at(m.from());
     let victim = capture_victim(board, m);
-    let mvv_lva = piece_value(victim) as i16 * 10 - piece_value(attacker) as i16;
+    let mvv_lva = piece_value(victim) as i32 * 10 - piece_value(attacker) as i32;
 
     10_000 + mvv_lva + promotion_score
 }
 
-fn promotion_score(m: Move) -> i16 {
+fn promotion_score(m: Move) -> i32 {
     match m.kind() {
         MoveType::QPromotion | MoveType::QPromoCapture => 9_000,
         MoveType::RPromotion | MoveType::RPromoCapture => 8_000,
@@ -234,11 +234,13 @@ fn capture_victim(board: &Board, m: Move) -> Piece {
 mod tests {
     use super::*;
     use crate::board::square::Square;
+    use crate::search::history::{History, SearchStack, new_stack};
 
     fn next_move(picker: &mut MovePicker, board: &Board, movegen: &MoveGenerator) -> Option<Move> {
-        let history = [[[0; 64]; 64]; 2];
+        let history = History::new();
+        let stack: SearchStack = new_stack();
 
-        picker.next_move(board, movegen, &history)
+        picker.next_move(board, movegen, history.view(&stack, 0))
     }
 
     #[test]
@@ -342,18 +344,42 @@ mod tests {
         let movegen = MoveGenerator::new();
         let killer = Move::new(Square::E1, Square::D1, MoveType::Quiet);
         let history_move = Move::new(Square::E1, Square::F1, MoveType::Quiet);
-        let mut history = [[[0; 64]; 64]; 2];
+        let mut history = History::new();
+        let stack: SearchStack = new_stack();
         let mut picker = MovePicker::new(None, [Some(killer), None], true);
 
-        history[Color::White][Square::E1][Square::F1] = 100;
+        history.update(&stack, 0, &board, Color::White, history_move, 3, &[]);
 
         assert_eq!(
-            picker.next_move(&board, &movegen, &history),
+            picker.next_move(&board, &movegen, history.view(&stack, 0)),
             Some(killer)
         );
         assert_eq!(
-            picker.next_move(&board, &movegen, &history),
+            picker.next_move(&board, &movegen, history.view(&stack, 0)),
             Some(history_move)
+        );
+    }
+
+    #[test]
+    fn quiets_are_ordered_by_continuation_history() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let movegen = MoveGenerator::new();
+        let best = Move::new(Square::E1, Square::F1, MoveType::Quiet);
+        let mut history = History::new();
+        let mut stack: SearchStack = new_stack();
+        let mut picker = MovePicker::new(None, [None, None], true);
+
+        crate::search::history::set_stack_move(
+            &mut stack,
+            0,
+            Piece::BlackKnight,
+            Move::new(Square::G8, Square::F6, MoveType::Quiet),
+        );
+        history.update(&stack, 1, &board, Color::White, best, 3, &[]);
+
+        assert_eq!(
+            picker.next_move(&board, &movegen, history.view(&stack, 1)),
+            Some(best)
         );
     }
 
