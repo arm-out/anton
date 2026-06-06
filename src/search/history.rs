@@ -111,11 +111,11 @@ impl History {
         };
 
         if let Some(previous) = previous_entry(stack, ply, 1) {
-            update_continuation_entry(&mut self.continuation_1ply, previous, current, bonus);
+            update_continuation_entry(&mut self.continuation_1ply, previous, current, bonus / 2);
         }
 
         if let Some(previous) = previous_entry(stack, ply, 2) {
-            update_continuation_entry(&mut self.continuation_2ply, previous, current, bonus);
+            update_continuation_entry(&mut self.continuation_2ply, previous, current, bonus / 4);
         }
     }
 }
@@ -151,7 +151,7 @@ impl<'a> HistoryView<'a> {
         );
 
         // history + continuation1 + continuation2
-        (2 * history) + (continuation1 / 2)
+        (2 * history) + continuation1
     }
 }
 
