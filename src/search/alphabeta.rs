@@ -69,13 +69,18 @@ impl Search {
                 break;
             }
 
+            let quiet = is_quiet_history_move(m);
             let piece = refs.board.get_piece_at(m.from());
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
             }
 
-            set_stack_move(refs.stack, ROOT_PLY, piece, m);
+            if quiet {
+                set_stack_move(refs.stack, ROOT_PLY, piece, m);
+            } else {
+                clear_stack_entry(refs.stack, ROOT_PLY);
+            }
             legal_moves += 1;
             let score = -Self::negamax(
                 &mut refs,
@@ -205,7 +210,11 @@ impl Search {
                 continue;
             }
 
-            set_stack_move(refs.stack, ply, piece, m);
+            if quiet {
+                set_stack_move(refs.stack, ply, piece, m);
+            } else {
+                clear_stack_entry(refs.stack, ply);
+            }
             legal_moves += 1;
 
             // PVS search
@@ -323,13 +332,18 @@ impl Search {
                 };
             }
 
+            let quiet = is_quiet_history_move(m);
             let piece = refs.board.get_piece_at(m.from());
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
             }
 
-            set_stack_move(refs.stack, ply, piece, m);
+            if quiet {
+                set_stack_move(refs.stack, ply, piece, m);
+            } else {
+                clear_stack_entry(refs.stack, ply);
+            }
             legal_moves += 1;
             let score = -Self::quiescence(refs, -beta, -alpha, ply + 1, info);
             refs.board.unmake();
