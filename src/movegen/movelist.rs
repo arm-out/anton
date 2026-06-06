@@ -8,7 +8,7 @@ pub(crate) const MAX_MOVES: usize = 256;
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub(crate) struct ScoredMove {
     pub m: Move,
-    pub score: i16,
+    pub score: i32,
 }
 
 pub struct MoveList(ArrayVec<ScoredMove, MAX_MOVES>);
@@ -44,7 +44,7 @@ impl MoveList {
         self.pick_next_scored(start_idx).0
     }
 
-    pub fn pick_next_scored(&mut self, start_idx: usize) -> (Move, i16) {
+    pub fn pick_next_scored(&mut self, start_idx: usize) -> (Move, i32) {
         let mut best_idx = start_idx;
 
         for idx in start_idx + 1..self.0.len() {
