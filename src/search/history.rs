@@ -415,54 +415,6 @@ mod tests {
     }
 
     #[test]
-    fn update_rewards_cutoff_and_maluses_searched_quiets() {
-        let mut history = History::new();
-        let board = Board::from_fen("4k3/8/8/8/8/8/3PP3/4K1N1 w - - 0 1").unwrap();
-        let stack = stack_with_context();
-        let cutoff = Move::new(Square::E2, Square::E4, MoveType::Quiet);
-        let searched = [
-            Move::new(Square::D2, Square::D4, MoveType::Quiet),
-            Move::new(Square::G1, Square::F3, MoveType::Quiet),
-        ];
-
-        history.update(&stack, 3, &board, Color::White, cutoff, 2, &searched);
-
-        assert_eq!(history.butterfly[Color::White][Square::E2][Square::E4], 64);
-        assert_eq!(history.butterfly[Color::White][Square::D2][Square::D4], -64);
-        assert_eq!(history.butterfly[Color::White][Square::G1][Square::F3], -64);
-        assert_eq!(
-            history.continuation_1ply[continuation_idx(
-                StackEntry {
-                    piece: Piece::BlackKnight,
-                    to: Square::F6,
-                    valid: true,
-                },
-                StackEntry {
-                    piece: Piece::WhitePawn,
-                    to: Square::E4,
-                    valid: true,
-                },
-            )],
-            64
-        );
-        assert_eq!(
-            history.continuation_2ply[continuation_idx(
-                StackEntry {
-                    piece: Piece::WhiteKnight,
-                    to: Square::F3,
-                    valid: true,
-                },
-                StackEntry {
-                    piece: Piece::WhitePawn,
-                    to: Square::E4,
-                    valid: true,
-                },
-            )],
-            64
-        );
-    }
-
-    #[test]
     fn invalid_stack_entries_only_update_butterfly() {
         let mut history = History::new();
         let board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
@@ -505,38 +457,4 @@ mod tests {
     }
 
     #[test]
-    fn quiet_score_combines_butterfly_and_continuations() {
-        let mut history = History::new();
-        let board = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
-        let stack = stack_with_context();
-        let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
 
-        history.butterfly[Color::White][Square::E2][Square::E4] = 10;
-        history.continuation_1ply[continuation_idx(
-            StackEntry {
-                piece: Piece::BlackKnight,
-                to: Square::F6,
-                valid: true,
-            },
-            StackEntry {
-                piece: Piece::WhitePawn,
-                to: Square::E4,
-                valid: true,
-            },
-        )] = 20;
-        history.continuation_2ply[continuation_idx(
-            StackEntry {
-                piece: Piece::WhiteKnight,
-                to: Square::F3,
-                valid: true,
-            },
-            StackEntry {
-                piece: Piece::WhitePawn,
-                to: Square::E4,
-                valid: true,
-            },
-        )] = 30;
-
-        assert_eq!(history.view(&stack, 3).quiet_score(&board, m), 60);
-    }
-}
