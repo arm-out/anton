@@ -300,6 +300,24 @@ impl Board {
         debug_assert!(self.check_incrementals());
     }
 
+    pub fn make_null(&mut self) {
+        self.history.push(self.state);
+        self.clear_ep_square();
+        self.state.halfmove_clock += 1;
+        self.state.captured = Piece::None;
+        self.toggle_side();
+
+        debug_assert!(self.check_incrementals());
+    }
+
+    pub fn unmake_null(&mut self) {
+        if let Some(state) = self.history.pop() {
+            self.state = state;
+        }
+
+        debug_assert!(self.check_incrementals());
+    }
+
     pub fn make_quiet(&mut self, m: Move) {
         let from = m.from();
         let to = m.to();
@@ -616,5 +634,58 @@ mod tests {
         make_uci_move(&mut board, &movegen, "d8e8");
 
         assert!(board.is_repetition());
+    }
+
+    #[test]
+    fn null_move_unmake_restores_state() {
+        let mut board =
+            Board::from_fen("r3k2r/8/8/8/8/8/4P3/R3K2R w KQkq - 7 12").unwrap();
+        let key = board.state.zobrist_key;
+        let side = board.state.active_side;
+        let ep = board.state.en_passant;
+        let halfmove = board.state.halfmove_clock;
+        let fullmove = board.state.fullmove_number;
+        let history_len = board.history.len();
+        let evaluation = board.state.evaluation;
+        let game_phase = board.state.game_phase;
+
+        board.make_null();
+
+        assert_ne!(board.state.zobrist_key, key);
+        assert_ne!(board.state.active_side, side);
+        assert_eq!(board.state.en_passant, Square::None);
+        assert_eq!(board.state.halfmove_clock, halfmove + 1);
+        assert_eq!(board.state.fullmove_number, fullmove);
+        assert_eq!(board.history.len(), history_len + 1);
+        assert_eq!(board.state.evaluation, evaluation);
+        assert_eq!(board.state.game_phase, game_phase);
+
+        board.unmake_null();
+
+        assert_eq!(board.state.zobrist_key, key);
+        assert_eq!(board.state.active_side, side);
+        assert_eq!(board.state.en_passant, ep);
+        assert_eq!(board.state.halfmove_clock, halfmove);
+        assert_eq!(board.state.fullmove_number, fullmove);
+        assert_eq!(board.history.len(), history_len);
+        assert_eq!(board.state.evaluation, evaluation);
+        assert_eq!(board.state.game_phase, game_phase);
+    }
+
+    #[test]
+    fn null_move_clears_ep_until_unmade() {
+        let mut board = Board::from_fen("4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 2").unwrap();
+        let key = board.state.zobrist_key;
+
+        assert_eq!(board.state.en_passant, Square::D6);
+
+        board.make_null();
+
+        assert_eq!(board.state.en_passant, Square::None);
+
+        board.unmake_null();
+
+        assert_eq!(board.state.en_passant, Square::D6);
+        assert_eq!(board.state.zobrist_key, key);
     }
 }
