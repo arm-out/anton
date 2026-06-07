@@ -4,7 +4,7 @@ use crate::{
     board::{Board, piece::PieceType, square::Square},
     evaluation::{Score, evaluate_static},
     movegen::{
-        MoveGenerator, MAX_MOVES,
+        MAX_MOVES, MoveGenerator,
         moves::{Move, MoveType},
     },
 };
@@ -23,6 +23,7 @@ const DRAW_SCORE: Score = 0;
 const ROOT_PLY: u8 = 0;
 const REVERSE_FUTILITY_MAX_DEPTH: u8 = 3;
 const REVERSE_FUTILITY_MARGIN: Score = 80;
+const NULL_MOVE_MIN_DEPTH: u8 = 3;
 
 impl Search {
     pub(super) fn search_depth_inner(
@@ -69,7 +70,7 @@ impl Search {
             }
 
             legal_moves += 1;
-            let score = -Self::negamax(
+            let score = -Self::negamax::<true>(
                 &mut refs,
                 depth - 1,
                 -beta,
@@ -122,7 +123,7 @@ impl Search {
         }
     }
 
-    fn negamax(
+    fn negamax<const PV: bool>(
         refs: &mut SearchRefs<'_>,
         depth: u8,
         mut alpha: Score,
@@ -157,15 +158,41 @@ impl Search {
 
         let static_eval = evaluate_static(refs.board, refs.movegen);
         let in_check = Self::in_check(refs.board, refs.movegen);
-        let is_pv = alpha.saturating_add(1) < beta;
 
+        // Reverse futility pruning
         if depth <= REVERSE_FUTILITY_MAX_DEPTH
-            && !is_pv
+            && !PV
             && !in_check
             && !is_mate_score(beta)
             && static_eval.saturating_sub(REVERSE_FUTILITY_MARGIN * depth as Score) >= beta
         {
             return static_eval;
+        }
+
+        // Null move pruning
+        if !PV
+            && depth >= NULL_MOVE_MIN_DEPTH
+            && !in_check
+            && static_eval >= beta
+            && !is_mate_score(beta)
+            && can_null_move(refs.board)
+            && !info.should_stop()
+        {
+            let reduction = 2 + depth / 4;
+            refs.board.make_null();
+            let score = -Self::negamax::<false>(
+                refs,
+                depth - 1 - reduction,
+                -beta,
+                (-beta).saturating_add(1),
+                ply + 1,
+                info,
+            );
+            refs.board.unmake_null();
+
+            if score >= beta {
+                return beta;
+            }
         }
 
         let tt_move = tt_entry.map(|entry| entry.best_move());
@@ -196,16 +223,16 @@ impl Search {
             legal_moves += 1;
 
             // PVS search
-            let mut score = if is_pv && legal_moves == 1 {
-                -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info)
+            let mut score = if PV && legal_moves == 1 {
+                -Self::negamax::<true>(refs, depth - 1, -beta, -alpha, ply + 1, info)
             } else {
                 let null_beta = alpha.saturating_add(1);
-                -Self::negamax(refs, depth - 1, -null_beta, -alpha, ply + 1, info)
+                -Self::negamax::<false>(refs, depth - 1, -null_beta, -alpha, ply + 1, info)
             };
 
             // Null window fail -> search with full window
             if legal_moves > 1 && score > alpha && score < beta {
-                score = -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info);
+                score = -Self::negamax::<true>(refs, depth - 1, -beta, -alpha, ply + 1, info);
             }
             refs.board.unmake();
 
@@ -399,6 +426,15 @@ fn score_from_tt(score: Score, ply: u8) -> Score {
     }
 }
 
+fn can_null_move(board: &Board) -> bool {
+    let pieces = board.bitboards[board.us()];
+
+    pieces[PieceType::Knight].0 != 0
+        || pieces[PieceType::Bishop].0 != 0
+        || pieces[PieceType::Rook].0 != 0
+        || pieces[PieceType::Queen].0 != 0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -455,6 +491,23 @@ mod tests {
 
         assert_eq!(score_from_tt(stored, 1), 29_999);
         assert_eq!(score_from_tt(stored, 5), 29_995);
+    }
+
+    #[test]
+    fn null_move_requires_non_pawn_material() {
+        let king_only = Board::from_fen("4k3/8/8/8/8/8/8/4K3 w - - 0 1").unwrap();
+        let pawn_only = Board::from_fen("4k3/8/8/8/8/8/4P3/4K3 w - - 0 1").unwrap();
+        let knight = Board::from_fen("4k3/8/8/8/8/8/8/4K1N1 w - - 0 1").unwrap();
+        let bishop = Board::from_fen("4k3/8/8/8/8/8/8/2B1K3 w - - 0 1").unwrap();
+        let rook = Board::from_fen("4k3/8/8/8/8/8/8/R3K3 w - - 0 1").unwrap();
+        let queen = Board::from_fen("4k3/8/8/8/8/8/8/3QK3 w - - 0 1").unwrap();
+
+        assert!(!can_null_move(&king_only));
+        assert!(!can_null_move(&pawn_only));
+        assert!(can_null_move(&knight));
+        assert!(can_null_move(&bishop));
+        assert!(can_null_move(&rook));
+        assert!(can_null_move(&queen));
     }
 
     #[test]
