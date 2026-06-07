@@ -4,7 +4,7 @@ use crate::{
     board::{Board, piece::PieceType, square::Square},
     evaluation::{Score, evaluate_static},
     movegen::{
-        MoveGenerator, MAX_MOVES,
+        MAX_MOVES, MoveGenerator,
         moves::{Move, MoveType},
     },
 };
@@ -69,7 +69,7 @@ impl Search {
             }
 
             legal_moves += 1;
-            let score = -Self::negamax(
+            let score = -Self::negamax::<true>(
                 &mut refs,
                 depth - 1,
                 -beta,
@@ -122,7 +122,7 @@ impl Search {
         }
     }
 
-    fn negamax(
+    fn negamax<const PV: bool>(
         refs: &mut SearchRefs<'_>,
         depth: u8,
         mut alpha: Score,
@@ -157,10 +157,9 @@ impl Search {
 
         let static_eval = evaluate_static(refs.board, refs.movegen);
         let in_check = Self::in_check(refs.board, refs.movegen);
-        let is_pv = alpha.saturating_add(1) < beta;
 
         if depth <= REVERSE_FUTILITY_MAX_DEPTH
-            && !is_pv
+            && !PV
             && !in_check
             && !is_mate_score(beta)
             && static_eval.saturating_sub(REVERSE_FUTILITY_MARGIN * depth as Score) >= beta
@@ -196,16 +195,16 @@ impl Search {
             legal_moves += 1;
 
             // PVS search
-            let mut score = if is_pv && legal_moves == 1 {
-                -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info)
+            let mut score = if PV && legal_moves == 1 {
+                -Self::negamax::<true>(refs, depth - 1, -beta, -alpha, ply + 1, info)
             } else {
                 let null_beta = alpha.saturating_add(1);
-                -Self::negamax(refs, depth - 1, -null_beta, -alpha, ply + 1, info)
+                -Self::negamax::<false>(refs, depth - 1, -null_beta, -alpha, ply + 1, info)
             };
 
             // Null window fail -> search with full window
             if legal_moves > 1 && score > alpha && score < beta {
-                score = -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info);
+                score = -Self::negamax::<true>(refs, depth - 1, -beta, -alpha, ply + 1, info);
             }
             refs.board.unmake();
 
