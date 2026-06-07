@@ -224,7 +224,14 @@ impl Search {
             let mut skip_quiets = false;
 
             // Late move pruning
-            if !PV && depth <= LMP_MAX_DEPTH && moves_seen >= lmp_move_limit(depth) && !in_check {
+            if !PV
+                && depth <= LMP_MAX_DEPTH
+                && moves_seen >= lmp_move_limit(depth)
+                && !in_check
+                && !killers.contains(&Some(m))
+                && !is_mate_score(alpha)
+                && !is_mate_score(beta)
+            {
                 skip_quiets = true;
             }
 
