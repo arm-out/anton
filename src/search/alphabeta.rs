@@ -24,6 +24,8 @@ const ROOT_PLY: u8 = 0;
 const REVERSE_FUTILITY_MAX_DEPTH: u8 = 3;
 const REVERSE_FUTILITY_MARGIN: Score = 80;
 const NULL_MOVE_MIN_DEPTH: u8 = 3;
+const LMR_MIN_DEPTH: u8 = 3;
+const LMR_MIN_MOVES: u32 = 4;
 
 impl Search {
     pub(super) fn search_depth_inner(
@@ -221,13 +223,46 @@ impl Search {
             }
 
             legal_moves += 1;
+            let gives_check = Self::in_check(refs.board, refs.movegen);
 
             // PVS search
             let mut score = if PV && legal_moves == 1 {
                 -Self::negamax::<true>(refs, depth - 1, -beta, -alpha, ply + 1, info)
             } else {
                 let null_beta = alpha.saturating_add(1);
-                -Self::negamax::<false>(refs, depth - 1, -null_beta, -alpha, ply + 1, info)
+                // Late move reduction
+                let reduction = if depth >= LMR_MIN_DEPTH
+                    && legal_moves >= LMR_MIN_MOVES
+                    && quiet
+                    && !in_check
+                    && !gives_check
+                    && !is_mate_score(alpha)
+                    && !is_mate_score(beta)
+                    && !info.stopped
+                {
+                    lmr_reduction(depth, legal_moves)
+                } else {
+                    0
+                };
+
+                let score = if reduction > 0 {
+                    -Self::negamax::<false>(
+                        refs,
+                        depth - 1 - reduction,
+                        -null_beta,
+                        -alpha,
+                        ply + 1,
+                        info,
+                    )
+                } else {
+                    -INF
+                };
+
+                if reduction == 0 || score > alpha {
+                    -Self::negamax::<false>(refs, depth - 1, -null_beta, -alpha, ply + 1, info)
+                } else {
+                    score
+                }
             };
 
             // Null window fail -> search with full window
@@ -435,6 +470,18 @@ fn can_null_move(board: &Board) -> bool {
         || pieces[PieceType::Queen].0 != 0
 }
 
+fn lmr_reduction(depth: u8, legal_moves: u32) -> u8 {
+    if depth < LMR_MIN_DEPTH || legal_moves < LMR_MIN_MOVES {
+        return 0;
+    }
+
+    let reduction = 1.0 + (depth as f64).ln() * (legal_moves as f64).ln() / 3.14;
+    let reduction = reduction as u8;
+    let max_reduction = depth.saturating_sub(2);
+
+    reduction.min(max_reduction)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -508,6 +555,29 @@ mod tests {
         assert!(can_null_move(&bishop));
         assert!(can_null_move(&rook));
         assert!(can_null_move(&queen));
+    }
+
+    #[test]
+    fn lmr_reduction_obeys_minimums() {
+        assert_eq!(lmr_reduction(2, 4), 0);
+        assert_eq!(lmr_reduction(3, 3), 0);
+    }
+
+    #[test]
+    fn lmr_reduction_uses_log_formula() {
+        let expected = (1.0 + (3.0_f64).ln() * (4.0_f64).ln() / 3.14) as u8;
+
+        assert_eq!(lmr_reduction(3, 4), expected);
+    }
+
+    #[test]
+    fn lmr_reduction_grows_and_keeps_child_depth() {
+        let shallow = lmr_reduction(4, 4);
+        let deeper = lmr_reduction(8, 12);
+
+        assert!(deeper >= shallow);
+        assert!(lmr_reduction(3, 64) <= 1);
+        assert!(lmr_reduction(8, 64) <= 6);
     }
 
     #[test]
