@@ -23,6 +23,8 @@ const DRAW_SCORE: Score = 0;
 const ROOT_PLY: u8 = 0;
 const REVERSE_FUTILITY_MAX_DEPTH: u8 = 3;
 const REVERSE_FUTILITY_MARGIN: Score = 80;
+const FUTILITY_MAX_DEPTH: u8 = 2;
+const FUTILITY_MARGIN: Score = 120;
 const NULL_MOVE_MIN_DEPTH: u8 = 3;
 const LMR_MIN_DEPTH: u8 = 3;
 const LMR_MIN_MOVES: u32 = 4;
@@ -231,6 +233,18 @@ impl Search {
                 && !killers.contains(&Some(m))
                 && !is_mate_score(alpha)
                 && !is_mate_score(beta)
+            {
+                skip_quiets = true;
+            }
+
+            // Futility pruning
+            if !PV
+                && depth <= FUTILITY_MAX_DEPTH
+                && quiet
+                && !in_check
+                && !is_mate_score(alpha)
+                && !is_mate_score(beta)
+                && static_eval.saturating_add(FUTILITY_MARGIN * depth as Score) <= alpha
             {
                 skip_quiets = true;
             }
