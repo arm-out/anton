@@ -34,6 +34,10 @@ impl Engine {
 
     pub fn handle_command(&mut self, command: EngineCommand) -> Option<String> {
         match command {
+            EngineCommand::NewGame => {
+                self.new_game();
+                None
+            }
             EngineCommand::Position(position) => self
                 .set_position(position)
                 .err()
@@ -45,6 +49,14 @@ impl Engine {
             }
             EngineCommand::Stop => Some(protocol::bestmove_none()),
         }
+    }
+
+    fn new_game(&mut self) {
+        self.board = Self::board_from_source(&PositionSource::Startpos)
+            .expect("startpos FEN should be valid");
+        self.search.clear();
+        self.position_source = PositionSource::Startpos;
+        self.played_moves.clear();
     }
 
     fn set_position(&mut self, position: PositionCommand) -> Result<(), String> {
@@ -105,6 +117,7 @@ impl Default for Engine {
 }
 
 pub enum EngineCommand {
+    NewGame,
     Position(PositionCommand),
     Go(GoCommand),
     Stop,
@@ -251,5 +264,21 @@ mod tests {
             engine.played_moves,
             vec!["d2d4".to_string(), "d7d5".to_string()]
         );
+    }
+
+    #[test]
+    fn new_game_resets_board_and_cached_position() {
+        let mut engine = Engine::new();
+        engine
+            .set_position(startpos_with_moves(&["e2e4", "e7e5"]))
+            .unwrap();
+
+        assert_eq!(engine.handle_command(EngineCommand::NewGame), None);
+
+        assert_eq!(engine.board.history.len(), 0);
+        assert_eq!(engine.position_source, PositionSource::Startpos);
+        assert!(engine.played_moves.is_empty());
+        assert_eq!(engine.board.us(), Color::White);
+        assert!(engine.search.apply_uci_move(&mut engine.board, "e2e4").is_ok());
     }
 }

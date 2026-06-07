@@ -586,9 +586,10 @@ impl Board {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::movegen::All;
 
     fn make_uci_move(board: &mut Board, movegen: &MoveGenerator, uci_move: &str) {
-        let moves = movegen.gen_moves(board);
+        let moves = movegen.gen_moves::<All>(board);
 
         for i in 0..moves.len() {
             let m = moves.get(i);

@@ -1,11 +1,17 @@
+use arrayvec::ArrayVec;
+
 use crate::{
     board::{Board, piece::PieceType, square::Square},
     evaluation::{Score, evaluate_static},
-    movegen::MoveGenerator,
+    movegen::{
+        MoveGenerator, MAX_MOVES,
+        moves::{Move, MoveType},
+    },
 };
 
 use super::{
     Search, SearchInfo, SearchRefs, SearchResult, is_mate_score,
+    movepicker::MovePicker,
     transposition::{Bound, TTEntry},
 };
 
@@ -14,7 +20,6 @@ pub(super) const MATE_SCORE: Score = 30_000;
 pub(super) const ASPIRATION_WINDOW: Score = 50;
 pub(super) const ASPIRATION_MAX_WINDOW: Score = INF;
 const DRAW_SCORE: Score = 0;
-const QUIET_MOVE_SCORE: i16 = 0;
 const ROOT_PLY: u8 = 0;
 const REVERSE_FUTILITY_MAX_DEPTH: u8 = 3;
 const REVERSE_FUTILITY_MARGIN: Score = 80;
@@ -46,16 +51,18 @@ impl Search {
         let mut best_score = -INF;
         let original_alpha = alpha;
         let mut alpha = alpha;
-        let mut moves = refs.movegen.gen_moves(refs.board);
-        moves.score_moves(refs.board, tt_move);
+        let in_check = Self::in_check(refs.board, refs.movegen);
+        let mut move_picker = if in_check {
+            MovePicker::evasions(tt_move)
+        } else {
+            MovePicker::new(tt_move, [None, None], true)
+        };
         let mut legal_moves = 0;
 
-        for i in 0..moves.len() {
+        while let Some(m) = move_picker.next_move(refs.board, refs.movegen, refs.history) {
             if best_move.is_some() && info.should_stop() {
                 break;
             }
-
-            let m = moves.pick_next(i);
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
@@ -150,8 +157,10 @@ impl Search {
 
         let static_eval = evaluate_static(refs.board, refs.movegen);
         let in_check = Self::in_check(refs.board, refs.movegen);
+        let is_pv = alpha.saturating_add(1) < beta;
 
         if depth <= REVERSE_FUTILITY_MAX_DEPTH
+            && !is_pv
             && !in_check
             && !is_mate_score(beta)
             && static_eval.saturating_sub(REVERSE_FUTILITY_MARGIN * depth as Score) >= beta
@@ -160,18 +169,25 @@ impl Search {
         }
 
         let tt_move = tt_entry.map(|entry| entry.best_move());
+        let killers = Self::killer_moves(refs.killers, ply);
         let mut best_move = None;
         let mut best_score = -INF;
-        let mut moves = refs.movegen.gen_moves(refs.board);
-        moves.score_moves(refs.board, tt_move);
+        let mut move_picker = if in_check {
+            MovePicker::evasions(tt_move)
+        } else {
+            MovePicker::new(tt_move, killers, true)
+        };
         let mut legal_moves = 0;
 
-        for i in 0..moves.len() {
+        let mut searched_quiets: ArrayVec<Move, MAX_MOVES> = ArrayVec::new();
+
+        while let Some(m) = move_picker.next_move(refs.board, refs.movegen, refs.history) {
             if info.should_stop() {
                 break;
             }
 
-            let m = moves.pick_next(i);
+            let color = refs.board.us();
+            let quiet = is_quiet_history_move(m);
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
@@ -180,7 +196,7 @@ impl Search {
             legal_moves += 1;
 
             // PVS search
-            let mut score = if legal_moves == 1 {
+            let mut score = if is_pv && legal_moves == 1 {
                 -Self::negamax(refs, depth - 1, -beta, -alpha, ply + 1, info)
             } else {
                 let null_beta = alpha.saturating_add(1);
@@ -201,7 +217,15 @@ impl Search {
 
             if alpha >= beta {
                 info.beta_cutoff();
+                if !info.stopped && quiet {
+                    Self::update_history(refs.history, color, m, depth, &searched_quiets);
+                    Self::update_killer(refs.killers, ply, m);
+                }
                 break;
+            }
+
+            if quiet {
+                searched_quiets.push(m);
             }
         }
 
@@ -265,11 +289,14 @@ impl Search {
             best_score = alpha;
         }
 
-        let mut moves = refs.movegen.gen_moves(refs.board);
-        moves.score_moves(refs.board, None);
+        let mut move_picker = if in_check {
+            MovePicker::evasions(None)
+        } else {
+            MovePicker::new(None, [None, None], false)
+        };
         let mut legal_moves = 0;
 
-        for i in 0..moves.len() {
+        while let Some(m) = move_picker.next_move(refs.board, refs.movegen, refs.history) {
             if info.should_stop() {
                 info.leaf();
                 return if legal_moves == 0 {
@@ -277,12 +304,6 @@ impl Search {
                 } else {
                     best_score
                 };
-            }
-
-            let (m, score) = moves.pick_next_scored(i);
-            // We want to check all legal evasions if in check
-            if !in_check && score <= QUIET_MOVE_SCORE {
-                break;
             }
 
             if !refs.board.make(m, refs.movegen) {
@@ -346,6 +367,16 @@ fn tt_cutoff(entry: TTEntry, depth: u8, alpha: Score, beta: Score, ply: u8) -> O
         Bound::Upper if score <= alpha => Some(score),
         _ => None,
     }
+}
+
+fn is_quiet_history_move(m: Move) -> bool {
+    matches!(
+        m.kind(),
+        MoveType::Quiet
+            | MoveType::DoublePawnPush
+            | MoveType::CastleKingside
+            | MoveType::CastleQueenside
+    )
 }
 
 fn score_to_tt(score: Score, ply: u8) -> Score {
@@ -438,6 +469,8 @@ mod tests {
                 board: &mut board,
                 movegen: &search.movegen,
                 tt: &mut search.tt,
+                killers: &mut search.killers,
+                history: &mut search.history,
             },
             1,
             -10_001,
@@ -461,6 +494,8 @@ mod tests {
                 board: &mut board,
                 movegen: &search.movegen,
                 tt: &mut search.tt,
+                killers: &mut search.killers,
+                history: &mut search.history,
             },
             1,
             10_000,

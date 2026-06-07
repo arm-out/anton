@@ -1,3 +1,55 @@
+## v0.7.0
+
+## Regression
+
+```
+Elo   | 227.17 +- 47.78 (95%)
+SPRT  | 40.0+0.40s Threads=1 Hash=256MB
+LLR   | 3.04 (-2.94, 2.94) [0.00, 10.00]
+Games | N: 202 W: 140 L: 24 D: 38
+Penta | [0, 2, 25, 30, 44]
+```
+
+## Features
+
+- Staged movegen/movepicker
+
+```
+Elo   | 88.98 +- 22.52 (95%)
+SPRT  | 10.0+0.10s Threads=1 Hash=256MB
+LLR   | 2.98 (-2.94, 2.94) [0.00, 5.00]
+Games | N: 782 W: 412 L: 216 D: 154
+Penta | [28, 44, 128, 86, 105]
+```
+
+- Killer moves
+
+```
+Elo   | 111.07 +- 33.82 (95%)
+SPRT  | 10.0+0.10s Threads=1 Hash=256MB
+LLR   | 3.04 (-2.94, 2.94) [0.00, 10.00]
+Games | N: 304 W: 161 L: 67 D: 76
+Penta | [3, 19, 51, 39, 40]
+```
+
+- Butterfly History
+
+```
+Elo   | 32.84 +- 25.25 (95%)
+SPRT  | 10.0+0.10s Threads=1 Hash=256MB
+LLR   | 1.48 (-2.94, 2.94) [0.00, 10.00]
+Games | N: 520 W: 220 L: 171 D: 129
+Penta | [22, 46, 99, 47, 46]
+```
+
+### Misc
+
+- Parse `ucinewgame` command
+
+### Fix
+
+- Skip RFP while in PV node
+
 ## v0.6.0
 
 ### Regression

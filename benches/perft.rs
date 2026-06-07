@@ -1,6 +1,12 @@
 use anton::{board::Board, movegen::MoveGenerator};
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
+#[allow(dead_code)]
+#[path = "../tests/perft.rs"]
+mod perft;
+
+use perft::perft;
+
 struct PerftPosition {
     name: &'static str,
     fen: &'static str,
@@ -34,26 +40,6 @@ const POSITIONS: &[PerftPosition] = &[
         nodes: 422_333,
     },
 ];
-
-fn perft(board: &mut Board, depth: u8, movegen: &MoveGenerator) -> u64 {
-    if depth == 0 {
-        return 1;
-    }
-
-    let moves = movegen.gen_moves(board);
-    let mut nodes = 0;
-
-    for i in 0..moves.len() {
-        let m = moves.get(i);
-
-        if board.make(m, movegen) {
-            nodes += perft(board, depth - 1, movegen);
-            board.unmake();
-        }
-    }
-
-    nodes
-}
 
 fn bench_perft(c: &mut Criterion) {
     let movegen = MoveGenerator::new();

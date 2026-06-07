@@ -1,13 +1,14 @@
 mod alphabeta;
+mod movepicker;
 mod time;
 mod transposition;
 
 use std::time::{Duration, Instant};
 
 use crate::{
-    board::Board,
+    board::{Board, piece::Color, square::Square},
     evaluation::Score,
-    movegen::{MoveGenerator, moves::Move},
+    movegen::{All, MoveGenerator, moves::Move},
 };
 
 pub use self::transposition::DEFAULT_TT_SIZE_MB;
@@ -19,6 +20,11 @@ use self::{
 
 const DEFAULT_SEARCH_DEPTH: u8 = 5;
 const MAX_SEARCH_DEPTH: u8 = u8::MAX;
+const KILLER_SLOTS: usize = 2;
+pub(super) const MAX_HISTORY: i16 = 16_384;
+
+type KillerTable = [[Option<Move>; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
+pub(super) type ButterflyHistory = [[[i16; Square::COUNT]; Square::COUNT]; Color::COUNT];
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum SearchLimit {
@@ -51,6 +57,8 @@ struct SearchRefs<'a> {
     board: &'a mut Board,
     movegen: &'a MoveGenerator,
     tt: &'a mut TranspositionTable,
+    killers: &'a mut KillerTable,
+    history: &'a mut ButterflyHistory,
 }
 
 struct SearchInfo {
@@ -129,6 +137,8 @@ impl SearchInfo {
 pub struct Search {
     movegen: MoveGenerator,
     tt: TranspositionTable,
+    killers: KillerTable,
+    history: ButterflyHistory,
 }
 
 impl Search {
@@ -136,16 +146,21 @@ impl Search {
         Self {
             movegen: MoveGenerator::new(),
             tt: TranspositionTable::new(size_mb),
+            killers: [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize],
+            history: [[[0; Square::COUNT]; Square::COUNT]; Color::COUNT],
         }
     }
 
     pub fn search(&mut self, board: &mut Board, limit: SearchLimit) -> SearchResult {
         let mut info = SearchInfo::new(limit);
+        self.clear_killers();
         let max_depth = info.max_depth();
         let mut best_result = None;
         let mut last_score = 0;
         let movegen = &self.movegen;
         let tt = &mut self.tt;
+        let killers = &mut self.killers;
+        let history = &mut self.history;
 
         for depth in 1..=max_depth {
             if depth > 1 && info.stop_if_expired() {
@@ -163,6 +178,8 @@ impl Search {
                         board,
                         movegen,
                         tt: &mut *tt,
+                        killers: &mut *killers,
+                        history: &mut *history,
                     },
                     depth,
                     alpha,
@@ -204,13 +221,22 @@ impl Search {
         result
     }
 
+    pub fn clear(&mut self) {
+        self.tt.clear();
+        self.clear_killers();
+        self.clear_history();
+    }
+
     pub fn search_depth(&mut self, board: &mut Board, depth: u8) -> SearchResult {
         let mut info = SearchInfo::new(SearchLimit::Depth(depth));
+        self.clear_killers();
         Self::search_depth_inner(
             SearchRefs {
                 board,
                 movegen: &self.movegen,
                 tt: &mut self.tt,
+                killers: &mut self.killers,
+                history: &mut self.history,
             },
             depth,
             -INF,
@@ -232,7 +258,7 @@ impl Search {
     }
 
     fn find_legal_move(&self, board: &Board, uci_move: &str) -> Option<Move> {
-        let moves = self.movegen.gen_moves(board);
+        let moves = self.movegen.gen_moves::<All>(board);
 
         for i in 0..moves.len() {
             let m = moves.get(i);
@@ -243,6 +269,62 @@ impl Search {
         }
 
         None
+    }
+
+    fn clear_killers(&mut self) {
+        self.killers = [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
+    }
+
+    fn clear_history(&mut self) {
+        self.history = [[[0; Square::COUNT]; Square::COUNT]; Color::COUNT];
+    }
+
+    fn killer_moves(killers: &KillerTable, ply: u8) -> [Option<Move>; KILLER_SLOTS] {
+        killers
+            .get(ply as usize)
+            .copied()
+            .unwrap_or([None; KILLER_SLOTS])
+    }
+
+    fn update_killer(killers: &mut KillerTable, ply: u8, m: Move) {
+        let Some(killers) = killers.get_mut(ply as usize) else {
+            return;
+        };
+
+        if killers[0] == Some(m) {
+            return;
+        }
+
+        killers[1] = killers[0];
+        killers[0] = Some(m);
+    }
+
+    fn history_bonus(depth: u8) -> i16 {
+        (16 * i32::from(depth) * i32::from(depth)).min(2000) as i16
+    }
+
+    fn update_history(
+        history: &mut ButterflyHistory,
+        color: Color,
+        m: Move,
+        depth: u8,
+        searched_quiets: &[Move],
+    ) {
+        let bonus = Self::history_bonus(depth);
+
+        Self::update_history_entry(history, color, m, bonus);
+
+        for quiet in searched_quiets {
+            Self::update_history_entry(history, color, *quiet, -bonus);
+        }
+    }
+
+    fn update_history_entry(history: &mut ButterflyHistory, color: Color, m: Move, bonus: i16) {
+        let entry = &mut history[color][m.from()][m.to()];
+        let gravity = i32::from(*entry) * i32::from(bonus.abs()) / i32::from(MAX_HISTORY);
+        let updated = i32::from(*entry) + i32::from(bonus) - gravity;
+
+        *entry = updated.clamp(-i32::from(MAX_HISTORY), i32::from(MAX_HISTORY)) as i16;
     }
 }
 
@@ -287,7 +369,10 @@ fn is_mate_score(score: Score) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board::square::Square;
+    use crate::{
+        board::square::Square,
+        movegen::moves::{Move, MoveType},
+    };
 
     #[test]
     fn searches_two_plies_and_returns_a_move() {
@@ -505,5 +590,96 @@ mod tests {
 
         assert!(result.best_move.is_none());
         assert_eq!(result.score, 0);
+    }
+
+    #[test]
+    fn update_killer_stores_move_at_ply() {
+        let mut killers = [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
+        let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+
+        Search::update_killer(&mut killers, 3, m);
+
+        assert_eq!(Search::killer_moves(&killers, 3), [Some(m), None]);
+    }
+
+    #[test]
+    fn update_killer_does_not_duplicate_same_move() {
+        let mut killers = [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
+        let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+
+        Search::update_killer(&mut killers, 3, m);
+        Search::update_killer(&mut killers, 3, m);
+
+        assert_eq!(Search::killer_moves(&killers, 3), [Some(m), None]);
+    }
+
+    #[test]
+    fn update_killer_shifts_previous_move() {
+        let mut killers = [[None; KILLER_SLOTS]; MAX_SEARCH_DEPTH as usize];
+        let first = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+        let second = Move::new(Square::D2, Square::D4, MoveType::Quiet);
+
+        Search::update_killer(&mut killers, 3, first);
+        Search::update_killer(&mut killers, 3, second);
+
+        assert_eq!(
+            Search::killer_moves(&killers, 3),
+            [Some(second), Some(first)]
+        );
+    }
+
+    #[test]
+    fn history_bonus_is_capped() {
+        assert_eq!(Search::history_bonus(1), 16);
+        assert_eq!(Search::history_bonus(12), 2000);
+    }
+
+    #[test]
+    fn update_history_uses_gravity_bounds() {
+        let mut history = [[[0; Square::COUNT]; Square::COUNT]; Color::COUNT];
+        let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+
+        for _ in 0..64 {
+            Search::update_history_entry(&mut history, Color::White, m, 2000);
+        }
+
+        assert!(history[Color::White][Square::E2][Square::E4] <= MAX_HISTORY);
+        assert!(history[Color::White][Square::E2][Square::E4] > 0);
+
+        for _ in 0..128 {
+            Search::update_history_entry(&mut history, Color::White, m, -2000);
+        }
+
+        assert!(history[Color::White][Square::E2][Square::E4] >= -MAX_HISTORY);
+        assert!(history[Color::White][Square::E2][Square::E4] < 0);
+    }
+
+    #[test]
+    fn clear_resets_history() {
+        let mut search = Search::new(DEFAULT_TT_SIZE_MB);
+        let m = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+
+        Search::update_history_entry(&mut search.history, Color::White, m, 2000);
+        assert_ne!(search.history[Color::White][Square::E2][Square::E4], 0);
+
+        search.clear();
+
+        assert_eq!(search.history[Color::White][Square::E2][Square::E4], 0);
+    }
+
+    #[test]
+    fn update_history_rewards_cutoff_and_maluses_searched_quiets() {
+        let mut history = [[[0; Square::COUNT]; Square::COUNT]; Color::COUNT];
+        let cutoff = Move::new(Square::E2, Square::E4, MoveType::Quiet);
+        let searched = [
+            Move::new(Square::D2, Square::D4, MoveType::Quiet),
+            Move::new(Square::G1, Square::F3, MoveType::Quiet),
+        ];
+
+        Search::update_history(&mut history, Color::White, cutoff, 2, &searched);
+
+        assert_eq!(history[Color::White][Square::E2][Square::E4], 64);
+        assert_eq!(history[Color::White][Square::D2][Square::D4], -64);
+        assert_eq!(history[Color::White][Square::G1][Square::F3], -64);
     }
 }
