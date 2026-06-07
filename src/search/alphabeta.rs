@@ -26,6 +26,8 @@ const REVERSE_FUTILITY_MARGIN: Score = 80;
 const NULL_MOVE_MIN_DEPTH: u8 = 3;
 const LMR_MIN_DEPTH: u8 = 3;
 const LMR_MIN_MOVES: u32 = 4;
+const LMP_MAX_DEPTH: u8 = 3;
+const LMP_BASE_MOVES: u32 = 3;
 
 impl Search {
     pub(super) fn search_depth_inner(
@@ -207,6 +209,7 @@ impl Search {
             MovePicker::new(tt_move, killers, true)
         };
         let mut legal_moves = 0;
+        let mut moves_seen = 0;
 
         let mut searched_quiets: ArrayVec<Move, MAX_MOVES> = ArrayVec::new();
 
@@ -215,8 +218,26 @@ impl Search {
                 break;
             }
 
+            moves_seen += 1;
             let color = refs.board.us();
             let quiet = is_quiet_history_move(m);
+            let mut skip_quiets = false;
+
+            // Late move pruning
+            if !PV
+                && depth <= LMP_MAX_DEPTH
+                && moves_seen >= lmp_move_limit(depth)
+                && !in_check
+                && !killers.contains(&Some(m))
+                && !is_mate_score(alpha)
+                && !is_mate_score(beta)
+            {
+                skip_quiets = true;
+            }
+
+            if skip_quiets && quiet {
+                continue;
+            }
 
             if !refs.board.make(m, refs.movegen) {
                 continue;
@@ -482,6 +503,10 @@ fn lmr_reduction(depth: u8, legal_moves: u32) -> u8 {
     reduction.min(max_reduction)
 }
 
+fn lmp_move_limit(depth: u8) -> u32 {
+    LMP_BASE_MOVES + depth as u32 * depth as u32
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -578,6 +603,13 @@ mod tests {
         assert!(deeper >= shallow);
         assert!(lmr_reduction(3, 64) <= 1);
         assert!(lmr_reduction(8, 64) <= 6);
+    }
+
+    #[test]
+    fn lmp_move_limit_uses_quadratic_threshold() {
+        assert_eq!(lmp_move_limit(1), 4);
+        assert_eq!(lmp_move_limit(2), 7);
+        assert_eq!(lmp_move_limit(3), 12);
     }
 
     #[test]
